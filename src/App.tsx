@@ -2,9 +2,9 @@ import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { ConsoleFrame } from './components/ConsoleFrame';
 import { BottomNav } from './components/BottomNav';
 import { MapScreen } from './components/MapScreen';
-import { DamageCalc } from './components/DamageCalc';
 import { LinkCable } from './components/LinkCable';
 import { VaultScreen } from './screens/VaultScreen';
+import { TeamScreen } from './screens/TeamScreen';
 import { PlaceholderScreen } from './screens/PlaceholderScreen';
 import { BackupScreen } from './screens/BackupScreen';
 
@@ -30,7 +30,7 @@ function App() {
         <Routes>
           <Route path="/" element={<VaultScreen />} />
           <Route path="/map" element={<MapScreen />} />
-          <Route path="/team" element={<DamageCalc />} />
+          <Route path="/team" element={<TeamScreen />} />
           <Route
             path="/collection"
             element={<PlaceholderScreen title="Game Collection" note="Coming soon" />}
