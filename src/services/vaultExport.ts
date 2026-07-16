@@ -1,4 +1,5 @@
 import { db, type GameTitle, type GameInstance, type TrainerProfile, type VaultEntry, type MapProgress } from '../db/schema';
+import { recordSnapshot } from './versionHistory';
 
 export const BACKUP_VERSION = 1;
 
@@ -41,10 +42,10 @@ export function downloadVaultBackup(backup: CodexBackup, filename = 'co-dex-back
 }
 
 /**
- * Replaces all local Vault data with the given snapshot. This is a full
- * overwrite — the Session Version History (PRD 14.3) is the intended undo
- * path for imports, but isn't built yet, so as a stopgap this auto-downloads
- * a safety snapshot of the current state before overwriting anything.
+ * Replaces all local Vault data with the given snapshot. Full overwrites
+ * like this are exactly what Version History (PRD 14.3) exists for — a
+ * pre-import snapshot is recorded so the import can be undone from the
+ * History panel, same as any other mutating action.
  */
 export async function importVault(json: string): Promise<void> {
   const parsed = JSON.parse(json) as CodexBackup;
@@ -52,8 +53,7 @@ export async function importVault(json: string): Promise<void> {
     throw new Error(`Unsupported backup version: ${parsed.version}`);
   }
 
-  const safetySnapshot = await exportVault();
-  downloadVaultBackup(safetySnapshot, 'co-dex-pre-import-safety-backup.codex');
+  await recordSnapshot('import', 'Vault restored from a .codex file');
 
   await db.transaction(
     'rw',

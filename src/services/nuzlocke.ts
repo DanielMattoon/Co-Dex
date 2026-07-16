@@ -1,4 +1,5 @@
 import { db, type VaultEntry } from '../db/schema';
+import { recordSnapshot } from './versionHistory';
 
 /** No game-instance selection UI exists yet — placeholder scope key, shared with Map/Vault. */
 export const DEFAULT_GAME_INSTANCE_ID = 'demo_instance';
@@ -33,6 +34,7 @@ export async function isNuzlockeMode(gameInstanceId: string): Promise<boolean> {
 
 export async function setNuzlockeMode(gameInstanceId: string, enabled: boolean): Promise<void> {
   await ensureDefaultGameInstance();
+  await recordSnapshot('nuzlocke_toggle', `Nuzlocke Mode turned ${enabled ? 'on' : 'off'}`);
   await db.game_instances.update(gameInstanceId, { isNuzlockeMode: enabled });
 }
 
@@ -92,6 +94,7 @@ export async function registerCatch(params: CatchParams): Promise<void> {
     ],
     is_sandbox_anomalous: false,
   };
+  await recordSnapshot('catch', `Caught ${species} on ${routeLabel}`);
   await db.vault.put(entry);
 
   if (nuzlocke) {
@@ -112,6 +115,7 @@ export async function markFainted(uuid: string): Promise<void> {
   const entry = await db.vault.get(uuid);
   if (!entry) return;
   const now = new Date().toISOString();
+  await recordSnapshot('faint', `${entry.species} fainted`);
   await db.vault.update(uuid, {
     dead: true,
     box_index: GRAVEYARD_BOX_INDEX,

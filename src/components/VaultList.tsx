@@ -8,12 +8,18 @@ import {
   markFainted,
   setNuzlockeMode,
 } from '../services/nuzlocke';
+import { recordSnapshot } from '../services/versionHistory';
 
 function VaultRow({ entry, nuzlocke }: { entry: VaultEntry; nuzlocke: boolean }) {
   async function toggleBreedingLock() {
+    const nextLocked = !entry.breeding_project_lock?.is_locked;
+    await recordSnapshot(
+      'breeding_lock',
+      `${entry.species} breeding lock turned ${nextLocked ? 'on' : 'off'}`,
+    );
     await db.vault.update(entry.uuid, {
       breeding_project_lock: {
-        is_locked: !entry.breeding_project_lock?.is_locked,
+        is_locked: nextLocked,
         notes: entry.breeding_project_lock?.notes ?? null,
       },
     });

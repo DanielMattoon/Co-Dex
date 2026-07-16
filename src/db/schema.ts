@@ -89,12 +89,32 @@ export interface MapProgress {
   itemChecklist: Record<string, boolean>;
 }
 
+/** A full snapshot of every other table, used for Version History undo (PRD 14.3). */
+export interface DbSnapshot {
+  game_titles: GameTitle[];
+  game_instances: GameInstance[];
+  trainer_profile: TrainerProfile[];
+  vault: VaultEntry[];
+  map_progress: MapProgress[];
+}
+
+export interface VersionHistoryEntry {
+  id?: number;
+  timestamp: string;
+  action: string;
+  summary: string;
+  /** Absent on compacted entries — a rough daily summary survives, but it's no longer revertible (PRD 14.3 pruning policy). */
+  snapshot: DbSnapshot | null;
+  compacted: boolean;
+}
+
 export const db = new Dexie('CoDexDatabase') as Dexie & {
   game_titles: EntityTable<GameTitle, 'game_title_id'>;
   game_instances: EntityTable<GameInstance, 'game_instance_id'>;
   trainer_profile: EntityTable<TrainerProfile, 'id'>;
   vault: EntityTable<VaultEntry, 'uuid'>;
   map_progress: EntityTable<MapProgress, 'id'>;
+  version_history: EntityTable<VersionHistoryEntry, 'id'>;
 };
 
 db.version(1).stores({
@@ -104,4 +124,8 @@ db.version(1).stores({
   vault:
     'uuid, pokemon_id, current_game_instance_id, origin_game_instance_id, box_index, shiny, dead, is_sandbox_anomalous',
   map_progress: 'id, routeId, game_instance_id',
+});
+
+db.version(2).stores({
+  version_history: '++id, timestamp',
 });

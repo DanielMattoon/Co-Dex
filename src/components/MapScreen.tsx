@@ -11,6 +11,7 @@ import {
   ensureDefaultGameInstance,
   registerCatch,
 } from '../services/nuzlocke';
+import { recordSnapshot } from '../services/versionHistory';
 
 const ZONE_COLOR: Record<EncounterZone['kind'], string> = {
   grass: '#22c55e',
@@ -197,7 +198,10 @@ export function MapScreen() {
   async function toggleItemClaimed(markerId: string) {
     const current = await db.map_progress.get(progressId);
     const nextChecklist = { ...(current?.itemChecklist ?? {}) };
-    nextChecklist[markerId] = !nextChecklist[markerId];
+    const claiming = !nextChecklist[markerId];
+    nextChecklist[markerId] = claiming;
+    const label = SAMPLE_ROUTE.markers.find((m) => m.id === markerId)?.label ?? markerId;
+    await recordSnapshot('item_claim', `${label} marked ${claiming ? 'claimed' : 'unclaimed'}`);
     await db.map_progress.put({
       id: progressId,
       routeId: SAMPLE_ROUTE.routeId,
