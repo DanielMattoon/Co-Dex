@@ -2,26 +2,31 @@ import { useState } from 'react';
 import { DamageCalc } from '../components/DamageCalc';
 import { BreedingPlanner } from '../components/BreedingPlanner';
 import { IVChainPlanner } from '../components/IVChainPlanner';
+import { EggMoveTree } from '../components/EggMoveTree';
+import { MetaAnalytics } from '../components/MetaAnalytics';
 
-type Tab = 'calc' | 'breed' | 'ivplan';
+type Tab = 'calc' | 'breed' | 'ivplan' | 'eggmoves' | 'meta';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'calc', label: 'Calculator' },
   { id: 'breed', label: 'Breeding' },
   { id: 'ivplan', label: 'IV Chain' },
+  { id: 'eggmoves', label: 'Egg Moves' },
+  { id: 'meta', label: 'Meta' },
 ];
 
 /**
- * Hosts the Damage Calculator and Breeding Planner sub-features under one
- * bottom-nav tab (PRD Section 8) via an in-screen sub-tab switcher, keeping
- * this a two-tap flow rather than crowding the primary nav (PRD 2.2).
+ * Hosts the Damage Calculator, Breeding Planner sub-features, and Meta
+ * Analytics under one bottom-nav tab (PRD Sections 8, 9) via an in-screen
+ * sub-tab switcher, keeping this a two-tap flow rather than crowding the
+ * primary nav (PRD 2.2).
  */
 export function TeamScreen() {
   const [tab, setTab] = useState<Tab>('calc');
 
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -42,6 +47,8 @@ export function TeamScreen() {
         {tab === 'calc' && <DamageCalc />}
         {tab === 'breed' && <BreedingPlanner />}
         {tab === 'ivplan' && <IVChainPlanner />}
+        {tab === 'eggmoves' && <EggMoveTree />}
+        {tab === 'meta' && <MetaAnalytics />}
       </div>
     </div>
   );
