@@ -1,31 +1,8 @@
 import { db, type VaultEntry } from '../db/schema';
 import { recordSnapshot } from './versionHistory';
 
-/** No game-instance selection UI exists yet — placeholder scope key, shared with Map/Vault. */
-export const DEFAULT_GAME_INSTANCE_ID = 'demo_instance';
-export const DEFAULT_GAME_TITLE_ID = 'demo_title';
-
 /** Reserved box_index for fainted Nuzlocke specimens — a locked Graveyard box (PRD 10). */
 export const GRAVEYARD_BOX_INDEX = -1;
-
-/** Guarantees the demo game instance exists so Nuzlocke state has somewhere to live. */
-export async function ensureDefaultGameInstance(): Promise<void> {
-  const existing = await db.game_instances.get(DEFAULT_GAME_INSTANCE_ID);
-  if (existing) return;
-  await db.game_titles.put({
-    game_title_id: DEFAULT_GAME_TITLE_ID,
-    name: 'Demo Save',
-    generation: 9,
-    box_count: 1,
-    boxes_slots: 30,
-  });
-  await db.game_instances.put({
-    game_instance_id: DEFAULT_GAME_INSTANCE_ID,
-    game_title_id: DEFAULT_GAME_TITLE_ID,
-    isNuzlockeMode: false,
-    created_date: new Date().toISOString(),
-  });
-}
 
 export async function isNuzlockeMode(gameInstanceId: string): Promise<boolean> {
   const instance = await db.game_instances.get(gameInstanceId);
@@ -33,7 +10,6 @@ export async function isNuzlockeMode(gameInstanceId: string): Promise<boolean> {
 }
 
 export async function setNuzlockeMode(gameInstanceId: string, enabled: boolean): Promise<void> {
-  await ensureDefaultGameInstance();
   await recordSnapshot('nuzlocke_toggle', `Nuzlocke Mode turned ${enabled ? 'on' : 'off'}`);
   await db.game_instances.update(gameInstanceId, { isNuzlockeMode: enabled });
 }

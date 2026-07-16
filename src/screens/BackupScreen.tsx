@@ -2,8 +2,9 @@ import { useRef, useState } from 'react';
 import { useGoogleDrive } from '../hooks/useGoogleDrive';
 import { downloadVaultBackup, exportVault, importVault } from '../services/vaultExport';
 import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
+import { GameSavesPanel } from '../components/GameSavesPanel';
 
-type Tab = 'backup' | 'history';
+type Tab = 'backup' | 'history' | 'saves';
 
 function BackupTab() {
   const drive = useGoogleDrive();
@@ -119,6 +120,7 @@ function BackupTab() {
 const TABS: { id: Tab; label: string }[] = [
   { id: 'backup', label: 'Backup' },
   { id: 'history', label: 'History' },
+  { id: 'saves', label: 'Saves' },
 ];
 
 export function BackupScreen() {
@@ -143,7 +145,11 @@ export function BackupScreen() {
           </button>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto">{tab === 'backup' ? <BackupTab /> : <VersionHistoryPanel />}</div>
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'backup' && <BackupTab />}
+        {tab === 'history' && <VersionHistoryPanel />}
+        {tab === 'saves' && <GameSavesPanel />}
+      </div>
     </div>
   );
 }

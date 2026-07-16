@@ -5,13 +5,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { SAMPLE_ROUTE, type EncounterZone, type MapMarker } from '../services/mapData';
 import { suggestCounters } from '../services/counterStrategy';
-import {
-  DEFAULT_GAME_INSTANCE_ID,
-  canCatchOnRoute,
-  ensureDefaultGameInstance,
-  registerCatch,
-} from '../services/nuzlocke';
+import { canCatchOnRoute, registerCatch } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
+import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
 const ZONE_COLOR: Record<EncounterZone['kind'], string> = {
   grass: '#22c55e',
@@ -47,10 +43,7 @@ export function MapScreen() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [routeCatchable, setRouteCatchable] = useState(true);
   const [catchError, setCatchError] = useState<string | null>(null);
-
-  useEffect(() => {
-    ensureDefaultGameInstance();
-  }, []);
+  const { gameInstanceId, isNuzlockeMode: nuzlockeActive } = useActiveGameInstance();
 
   const availableLayers = useMemo<LayerKind[]>(() => {
     const kinds = new Set<LayerKind>();
@@ -69,21 +62,24 @@ export function MapScreen() {
     });
   }
 
-  const progressId = `${DEFAULT_GAME_INSTANCE_ID}_${SAMPLE_ROUTE.routeId}`;
-  const progress = useLiveQuery(() => db.map_progress.get(progressId), [progressId]);
-  const gameInstance = useLiveQuery(() => db.game_instances.get(DEFAULT_GAME_INSTANCE_ID), []);
-  const vaultEntries = useLiveQuery(() => db.vault.toArray(), []);
+  const progressId = gameInstanceId ? `${gameInstanceId}_${SAMPLE_ROUTE.routeId}` : null;
+  const progress = useLiveQuery(() => (progressId ? db.map_progress.get(progressId) : undefined), [progressId]);
+  const vaultEntries = useLiveQuery(
+    () => (gameInstanceId ? db.vault.where('current_game_instance_id').equals(gameInstanceId).toArray() : []),
+    [gameInstanceId],
+  );
   const caughtSet = new Set((vaultEntries ?? []).map((entry) => entry.pokemon_id));
   const ownedSpeciesNames = [...new Set((vaultEntries ?? []).map((entry) => entry.species))];
-  const nuzlockeActive = gameInstance?.isNuzlockeMode ?? false;
 
   useEffect(() => {
-    canCatchOnRoute(SAMPLE_ROUTE.routeId, DEFAULT_GAME_INSTANCE_ID).then(setRouteCatchable);
-  }, [progress, gameInstance]);
+    if (!gameInstanceId) return;
+    canCatchOnRoute(SAMPLE_ROUTE.routeId, gameInstanceId).then(setRouteCatchable);
+  }, [progress, gameInstanceId, nuzlockeActive]);
 
   async function catchSpecies(species: string, pokemonId: number) {
+    if (!gameInstanceId) return;
     setCatchError(null);
-    const allowed = await canCatchOnRoute(SAMPLE_ROUTE.routeId, DEFAULT_GAME_INSTANCE_ID);
+    const allowed = await canCatchOnRoute(SAMPLE_ROUTE.routeId, gameInstanceId);
     if (!allowed) {
       setCatchError('Nuzlocke rule: this route\'s first-encounter slot is already used.');
       return;
@@ -94,7 +90,7 @@ export function MapScreen() {
       pokemonId,
       routeId: SAMPLE_ROUTE.routeId,
       routeLabel: SAMPLE_ROUTE.name,
-      gameInstanceId: DEFAULT_GAME_INSTANCE_ID,
+      gameInstanceId,
       level: 5,
     });
   }
@@ -196,6 +192,7 @@ export function MapScreen() {
   }, [progress]);
 
   async function toggleItemClaimed(markerId: string) {
+    if (!gameInstanceId || !progressId) return;
     const current = await db.map_progress.get(progressId);
     const nextChecklist = { ...(current?.itemChecklist ?? {}) };
     const claiming = !nextChecklist[markerId];
@@ -205,7 +202,7 @@ export function MapScreen() {
     await db.map_progress.put({
       id: progressId,
       routeId: SAMPLE_ROUTE.routeId,
-      game_instance_id: DEFAULT_GAME_INSTANCE_ID,
+      game_instance_id: gameInstanceId,
       firstEncounterLogged: current?.firstEncounterLogged ?? false,
       itemChecklist: nextChecklist,
     });

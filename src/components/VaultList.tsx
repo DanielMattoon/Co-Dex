@@ -1,14 +1,8 @@
-import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type VaultEntry } from '../db/schema';
-import {
-  DEFAULT_GAME_INSTANCE_ID,
-  GRAVEYARD_BOX_INDEX,
-  ensureDefaultGameInstance,
-  markFainted,
-  setNuzlockeMode,
-} from '../services/nuzlocke';
+import { GRAVEYARD_BOX_INDEX, markFainted, setNuzlockeMode } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
+import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
 function VaultRow({ entry, nuzlocke }: { entry: VaultEntry; nuzlocke: boolean }) {
   async function toggleBreedingLock() {
@@ -65,29 +59,29 @@ function VaultRow({ entry, nuzlocke }: { entry: VaultEntry; nuzlocke: boolean })
 
 /** PC Box / Vault list, with Nuzlocke enforcement (PRD 10) and Breeding Project Lock (PRD 8.4). */
 export function VaultList() {
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    ensureDefaultGameInstance().then(() => setReady(true));
-  }, []);
-
-  const gameInstance = useLiveQuery(() => db.game_instances.get(DEFAULT_GAME_INSTANCE_ID), [ready]);
-  const nuzlocke = gameInstance?.isNuzlockeMode ?? false;
+  const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready } = useActiveGameInstance();
+  const gameTitle = useLiveQuery(
+    () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
+    [gameInstance],
+  );
 
   const entries = useLiveQuery(
-    () => db.vault.where('current_game_instance_id').equals(DEFAULT_GAME_INSTANCE_ID).toArray(),
-    [ready],
+    () => (gameInstanceId ? db.vault.where('current_game_instance_id').equals(gameInstanceId).toArray() : []),
+    [gameInstanceId],
   );
   const active = (entries ?? []).filter((e) => e.box_index !== GRAVEYARD_BOX_INDEX);
   const graveyard = (entries ?? []).filter((e) => e.box_index === GRAVEYARD_BOX_INDEX);
 
   async function toggleNuzlocke() {
-    await setNuzlockeMode(DEFAULT_GAME_INSTANCE_ID, !nuzlocke);
+    if (!gameInstanceId) return;
+    await setNuzlockeMode(gameInstanceId, !nuzlocke);
   }
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
+      {gameTitle && <p className="text-[10px] text-slate-500">Save: {gameTitle.name}</p>}
       <button
+        disabled={!ready}
         type="button"
         onClick={() => void toggleNuzlocke()}
         className={[
