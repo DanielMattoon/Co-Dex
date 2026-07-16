@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import {
@@ -36,6 +36,12 @@ export function EggMoveTree() {
   const vaultEntries = useLiveQuery(() => db.vault.toArray(), []);
   const ownedSpecies = new Set((vaultEntries ?? []).map((e) => e.species.toLowerCase()));
 
+  // Guards against out-of-order async responses: if the target or selected
+  // move changes again before an in-flight request resolves, that stale
+  // response is dropped instead of overwriting newer state.
+  const movesRequestId = useRef(0);
+  const fathersRequestId = useRef(0);
+
   useEffect(() => {
     listAllSpeciesNames()
       .then(setSpeciesNames)
@@ -43,17 +49,28 @@ export function EggMoveTree() {
   }, []);
 
   useEffect(() => {
+    const requestId = ++movesRequestId.current;
     setLoadingMoves(true);
     setError(null);
     setSelectedMove(null);
     setFathers([]);
     getEggMoves(target)
-      .then(setEggMoves)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load egg moves'))
-      .finally(() => setLoadingMoves(false));
+      .then((moves) => {
+        if (movesRequestId.current !== requestId) return;
+        setEggMoves(moves);
+      })
+      .catch((e) => {
+        if (movesRequestId.current !== requestId) return;
+        setError(e instanceof Error ? e.message : 'Failed to load egg moves');
+      })
+      .finally(() => {
+        if (movesRequestId.current !== requestId) return;
+        setLoadingMoves(false);
+      });
   }, [target]);
 
   async function pickMove(move: string) {
+    const requestId = ++fathersRequestId.current;
     setSelectedMove(move);
     setFathers([]);
     setLoadingFathers(true);
@@ -64,16 +81,19 @@ export function EggMoveTree() {
       const checked: FatherCandidate[] = [];
       for (const candidate of candidates) {
         const methods = await getLearnMethodsForSpeciesMove(candidate, move);
+        if (fathersRequestId.current !== requestId) return;
         const nonEgg = methods.filter((m) => m !== 'egg');
         if (nonEgg.length > 0) {
           checked.push({ species: candidate, methods: nonEgg, owned: ownedSpecies.has(candidate) });
         }
       }
+      if (fathersRequestId.current !== requestId) return;
       setFathers(checked);
     } catch (e) {
+      if (fathersRequestId.current !== requestId) return;
       setError(e instanceof Error ? e.message : 'Failed to check father candidates');
     } finally {
-      setLoadingFathers(false);
+      if (fathersRequestId.current === requestId) setLoadingFathers(false);
     }
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   KNOWN_FORMATS,
   getFormatUsage,
@@ -16,24 +16,50 @@ export function MetaAnalytics() {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guards against out-of-order async responses: if format/selection changes
+  // again before an in-flight request resolves, the stale response is
+  // dropped instead of overwriting newer state.
+  const listRequestId = useRef(0);
+  const profileRequestId = useRef(0);
+
   useEffect(() => {
+    const requestId = ++listRequestId.current;
     setLoadingList(true);
     setError(null);
     setSelected(null);
     setProfile(null);
     getFormatUsage(format)
-      .then((entries) => setUsage(entries.slice(0, 30)))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load usage stats'))
-      .finally(() => setLoadingList(false));
+      .then((entries) => {
+        if (listRequestId.current !== requestId) return;
+        setUsage(entries.slice(0, 30));
+      })
+      .catch((e) => {
+        if (listRequestId.current !== requestId) return;
+        setError(e instanceof Error ? e.message : 'Failed to load usage stats');
+      })
+      .finally(() => {
+        if (listRequestId.current !== requestId) return;
+        setLoadingList(false);
+      });
   }, [format]);
 
   useEffect(() => {
     if (!selected) return;
+    const requestId = ++profileRequestId.current;
     setLoadingProfile(true);
     getPokemonMetaProfile(format, selected)
-      .then(setProfile)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load profile'))
-      .finally(() => setLoadingProfile(false));
+      .then((p) => {
+        if (profileRequestId.current !== requestId) return;
+        setProfile(p);
+      })
+      .catch((e) => {
+        if (profileRequestId.current !== requestId) return;
+        setError(e instanceof Error ? e.message : 'Failed to load profile');
+      })
+      .finally(() => {
+        if (profileRequestId.current !== requestId) return;
+        setLoadingProfile(false);
+      });
   }, [format, selected]);
 
   return (
