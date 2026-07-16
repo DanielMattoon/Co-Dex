@@ -1,6 +1,7 @@
 import { HashRouter, Route, Routes } from 'react-router-dom';
 import { ConsoleFrame } from './components/ConsoleFrame';
 import { BottomNav } from './components/BottomNav';
+import { MapScreen } from './components/MapScreen';
 import { VaultScreen } from './screens/VaultScreen';
 import { PlaceholderScreen } from './screens/PlaceholderScreen';
 
@@ -13,10 +14,7 @@ function App() {
       >
         <Routes>
           <Route path="/" element={<VaultScreen />} />
-          <Route
-            path="/map"
-            element={<PlaceholderScreen title="Map Guide" note="Coming soon" />}
-          />
+          <Route path="/map" element={<MapScreen />} />
           <Route
             path="/team"
             element={<PlaceholderScreen title="Team Builder" note="Coming soon" />}
