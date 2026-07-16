@@ -14,11 +14,19 @@ export interface EncounterZone {
   encounters: { species: string; pokemon_id: number; rate: number }[];
 }
 
+export interface RosterMember {
+  species: string;
+  level: number;
+  moves: string[];
+}
+
 export interface MapMarker {
   id: string;
   position: [number, number];
   kind: 'item' | 'trainer' | 'gym';
   label: string;
+  /** Gym Leader / Boss walkthrough roster (PRD 7.3) — trainer/gym markers only. */
+  roster?: RosterMember[];
 }
 
 export interface RouteMapData {
@@ -61,6 +69,22 @@ export const SAMPLE_ROUTE: RouteMapData = {
   ],
   markers: [
     { id: 'route1_item_1', position: [30, 210], kind: 'item', label: 'Potion' },
-    { id: 'route1_trainer_1', position: [150, 220], kind: 'trainer', label: 'Youngster Joey' },
+    {
+      id: 'route1_trainer_1',
+      position: [150, 220],
+      kind: 'trainer',
+      label: 'Youngster Joey',
+      roster: [{ species: 'Rattata', level: 4, moves: ['Tackle', 'Tail Whip'] }],
+    },
+    {
+      id: 'route1_gym_brock',
+      position: [90, 290],
+      kind: 'gym',
+      label: 'Gym Leader Brock',
+      roster: [
+        { species: 'Geodude', level: 12, moves: ['Tackle', 'Defense Curl'] },
+        { species: 'Onix', level: 14, moves: ['Tackle', 'Screech', 'Bind', 'Rock Throw'] },
+      ],
+    },
   ],
 };
