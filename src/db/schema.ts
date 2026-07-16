@@ -43,6 +43,11 @@ export interface ReservationStatus {
   target_evolution_id: string | null;
 }
 
+export interface BreedingProjectLock {
+  is_locked: boolean;
+  notes: string | null;
+}
+
 export interface HistoryLogEntry {
   timestamp: string;
   action: string;
@@ -71,6 +76,7 @@ export interface VaultEntry {
   held_item: string | null;
   tags: string[];
   reservation_status: ReservationStatus;
+  breeding_project_lock: BreedingProjectLock;
   history_log: HistoryLogEntry[];
   is_sandbox_anomalous: boolean;
 }

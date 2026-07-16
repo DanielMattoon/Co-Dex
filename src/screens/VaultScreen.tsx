@@ -1,26 +1,39 @@
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db/schema';
-import { StatBar } from '../components/StatBar';
+import { useState } from 'react';
+import { VaultList } from '../components/VaultList';
+import { ItemDex } from '../components/ItemDex';
 
-const SAMPLE_STATS = [
-  { label: 'HP', value: 78 },
-  { label: 'ATK', value: 84 },
-  { label: 'DEF', value: 78 },
-  { label: 'SPA', value: 109 },
-  { label: 'SPD', value: 85 },
-  { label: 'SPE', value: 100 },
+type Tab = 'vault' | 'items';
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'vault', label: 'Vault' },
+  { id: 'items', label: 'Items' },
 ];
 
 export function VaultScreen() {
-  const vaultCount = useLiveQuery(() => db.vault.count(), []);
+  const [tab, setTab] = useState<Tab>('vault');
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-xs text-slate-400">Vault entries tracked: {vaultCount ?? 0}</p>
-      <div className="flex flex-col gap-1.5">
-        {SAMPLE_STATS.map((stat) => (
-          <StatBar key={stat.label} label={stat.label} value={stat.value} />
+    <div className="flex h-full flex-col gap-2">
+      <div className="flex gap-2">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={[
+              'rounded-md border px-2.5 py-1 text-[10px]',
+              tab === t.id
+                ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
+                : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
         ))}
+      </div>
+      <div className="flex-1 overflow-hidden">
+        {tab === 'vault' && <VaultList />}
+        {tab === 'items' && <ItemDex />}
       </div>
     </div>
   );

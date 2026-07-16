@@ -5,9 +5,12 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { SAMPLE_ROUTE, type EncounterZone, type MapMarker } from '../services/mapData';
 import { suggestCounters } from '../services/counterStrategy';
-
-/** No active trainer/game-instance selection UI exists yet — placeholder scope key. */
-const DEFAULT_GAME_INSTANCE_ID = 'demo_instance';
+import {
+  DEFAULT_GAME_INSTANCE_ID,
+  canCatchOnRoute,
+  ensureDefaultGameInstance,
+  registerCatch,
+} from '../services/nuzlocke';
 
 const ZONE_COLOR: Record<EncounterZone['kind'], string> = {
   grass: '#22c55e',
@@ -41,6 +44,12 @@ export function MapScreen() {
   const markerLayersRef = useRef<Map<string, L.CircleMarker>>(new Map());
   const itemMarkersRef = useRef<Map<string, L.CircleMarker>>(new Map());
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [routeCatchable, setRouteCatchable] = useState(true);
+  const [catchError, setCatchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    ensureDefaultGameInstance();
+  }, []);
 
   const availableLayers = useMemo<LayerKind[]>(() => {
     const kinds = new Set<LayerKind>();
@@ -61,9 +70,33 @@ export function MapScreen() {
 
   const progressId = `${DEFAULT_GAME_INSTANCE_ID}_${SAMPLE_ROUTE.routeId}`;
   const progress = useLiveQuery(() => db.map_progress.get(progressId), [progressId]);
+  const gameInstance = useLiveQuery(() => db.game_instances.get(DEFAULT_GAME_INSTANCE_ID), []);
   const vaultEntries = useLiveQuery(() => db.vault.toArray(), []);
   const caughtSet = new Set((vaultEntries ?? []).map((entry) => entry.pokemon_id));
   const ownedSpeciesNames = [...new Set((vaultEntries ?? []).map((entry) => entry.species))];
+  const nuzlockeActive = gameInstance?.isNuzlockeMode ?? false;
+
+  useEffect(() => {
+    canCatchOnRoute(SAMPLE_ROUTE.routeId, DEFAULT_GAME_INSTANCE_ID).then(setRouteCatchable);
+  }, [progress, gameInstance]);
+
+  async function catchSpecies(species: string, pokemonId: number) {
+    setCatchError(null);
+    const allowed = await canCatchOnRoute(SAMPLE_ROUTE.routeId, DEFAULT_GAME_INSTANCE_ID);
+    if (!allowed) {
+      setCatchError('Nuzlocke rule: this route\'s first-encounter slot is already used.');
+      return;
+    }
+    await registerCatch({
+      uuid: crypto.randomUUID(),
+      species,
+      pokemonId,
+      routeId: SAMPLE_ROUTE.routeId,
+      routeLabel: SAMPLE_ROUTE.name,
+      gameInstanceId: DEFAULT_GAME_INSTANCE_ID,
+      level: 5,
+    });
+  }
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -213,16 +246,30 @@ export function MapScreen() {
               close
             </button>
           </div>
+          {nuzlockeActive && !routeCatchable && (
+            <p className="mb-2 text-red-400">Nuzlocke: first-encounter slot used on this route.</p>
+          )}
+          {catchError && <p className="mb-2 text-red-400">{catchError}</p>}
           <ul className="flex flex-col gap-1.5 text-xs">
             {activePanel.zone.encounters.map((enc) => {
               const owned = caughtSet.has(enc.pokemon_id);
+              const canCatch = !owned && (!nuzlockeActive || routeCatchable);
               return (
                 <li key={enc.species} className="flex items-center justify-between">
                   <span className="text-slate-200">{enc.species}</span>
                   <span className="text-slate-400">{enc.rate}%</span>
-                  <span className={owned ? 'text-emerald-400' : 'text-slate-500'}>
-                    {owned ? 'Caught' : 'Uncaught'}
-                  </span>
+                  {owned ? (
+                    <span className="text-emerald-400">Caught</span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={!canCatch}
+                      onClick={() => void catchSpecies(enc.species, enc.pokemon_id)}
+                      className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-0.5 text-cyan-300 hover:bg-cyan-500/30 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      Catch
+                    </button>
+                  )}
                 </li>
               );
             })}
