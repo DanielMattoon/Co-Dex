@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { DamageCalc } from '../components/DamageCalc';
 import { BreedingPlanner } from '../components/BreedingPlanner';
+import { IVChainPlanner } from '../components/IVChainPlanner';
 
-type Tab = 'calc' | 'breed';
+type Tab = 'calc' | 'breed' | 'ivplan';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'calc', label: 'Calculator' },
   { id: 'breed', label: 'Breeding' },
+  { id: 'ivplan', label: 'IV Chain' },
 ];
 
 /**
- * Hosts the Damage Calculator and Breeding Planner under one bottom-nav
- * tab (PRD Section 8) via an in-screen sub-tab switcher, keeping this a
- * two-tap flow rather than crowding the primary nav (PRD 2.2).
+ * Hosts the Damage Calculator and Breeding Planner sub-features under one
+ * bottom-nav tab (PRD Section 8) via an in-screen sub-tab switcher, keeping
+ * this a two-tap flow rather than crowding the primary nav (PRD 2.2).
  */
 export function TeamScreen() {
   const [tab, setTab] = useState<Tab>('calc');
@@ -37,7 +39,9 @@ export function TeamScreen() {
         ))}
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab === 'calc' ? <DamageCalc /> : <BreedingPlanner />}
+        {tab === 'calc' && <DamageCalc />}
+        {tab === 'breed' && <BreedingPlanner />}
+        {tab === 'ivplan' && <IVChainPlanner />}
       </div>
     </div>
   );
