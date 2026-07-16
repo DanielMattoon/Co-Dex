@@ -1,0 +1,53 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-retro: 'Press Start 2P', ui-monospace, Consolas, monospace;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  image-rendering: pixelated;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #0b0c10;
+  color: #e5e7eb;
+  font-family: var(--font-mono);
+}
+
+/* Retro-modern console frame: 4:3 handheld bounds, dark-glass panels (Section 2.3, 4). */
+.console-frame {
+  aspect-ratio: 4 / 3;
+  max-width: 480px;
+  margin: 0 auto;
+  border-radius: 12px;
+  border: 2px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
