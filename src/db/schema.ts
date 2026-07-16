@@ -89,6 +89,54 @@ export interface MapProgress {
   itemChecklist: Record<string, boolean>;
 }
 
+/**
+ * Game Collection catalog entry (PRD 22) — static reference data, one row
+ * per released title. `category` matches PRD 22.4's generic schema so
+ * cards/movies/merch can reuse this table later without a re-architecture,
+ * even though only 'game' is populated in v1.
+ */
+export interface CollectibleCatalogItem {
+  catalog_id: string;
+  category: 'game' | 'card' | 'movie' | 'merch';
+  name: string;
+  platform: string;
+  region: string;
+  release_year: number;
+}
+
+export interface CollectibleGrading {
+  is_graded: boolean;
+  company: string | null;
+  grade: string | null;
+  cert_number: string | null;
+}
+
+export interface CollectibleAcquisition {
+  purchase_price: number | null;
+  purchase_date: string | null;
+  source: string | null;
+}
+
+export interface CollectibleDisposition {
+  is_sold: boolean;
+  sold_price: number | null;
+  sold_date: string | null;
+  sold_via: string | null;
+}
+
+/** A physical owned copy of a catalog item (PRD 22.2) — a title can have several. */
+export interface CollectibleCopy {
+  copy_id: string;
+  catalog_id: string;
+  condition: string;
+  grading: CollectibleGrading;
+  acquisition: CollectibleAcquisition;
+  disposition: CollectibleDisposition;
+  linked_game_instance_id: string | null;
+  notes: string;
+  tags: string[];
+}
+
 /** A full snapshot of every other table, used for Version History undo (PRD 14.3). */
 export interface DbSnapshot {
   game_titles: GameTitle[];
@@ -96,6 +144,8 @@ export interface DbSnapshot {
   trainer_profile: TrainerProfile[];
   vault: VaultEntry[];
   map_progress: MapProgress[];
+  collectible_catalog: CollectibleCatalogItem[];
+  collectible_copies: CollectibleCopy[];
 }
 
 export interface VersionHistoryEntry {
@@ -115,6 +165,8 @@ export const db = new Dexie('CoDexDatabase') as Dexie & {
   vault: EntityTable<VaultEntry, 'uuid'>;
   map_progress: EntityTable<MapProgress, 'id'>;
   version_history: EntityTable<VersionHistoryEntry, 'id'>;
+  collectible_catalog: EntityTable<CollectibleCatalogItem, 'catalog_id'>;
+  collectible_copies: EntityTable<CollectibleCopy, 'copy_id'>;
 };
 
 db.version(1).stores({
@@ -128,4 +180,9 @@ db.version(1).stores({
 
 db.version(2).stores({
   version_history: '++id, timestamp',
+});
+
+db.version(3).stores({
+  collectible_catalog: 'catalog_id, category, platform',
+  collectible_copies: 'copy_id, catalog_id',
 });

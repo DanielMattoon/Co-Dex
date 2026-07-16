@@ -1,7 +1,16 @@
-import { db, type GameTitle, type GameInstance, type TrainerProfile, type VaultEntry, type MapProgress } from '../db/schema';
+import {
+  db,
+  type GameTitle,
+  type GameInstance,
+  type TrainerProfile,
+  type VaultEntry,
+  type MapProgress,
+  type CollectibleCatalogItem,
+  type CollectibleCopy,
+} from '../db/schema';
 import { recordSnapshot } from './versionHistory';
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 export interface CodexBackup {
   version: typeof BACKUP_VERSION;
@@ -12,22 +21,27 @@ export interface CodexBackup {
     trainer_profile: TrainerProfile[];
     vault: VaultEntry[];
     map_progress: MapProgress[];
+    collectible_catalog: CollectibleCatalogItem[];
+    collectible_copies: CollectibleCopy[];
   };
 }
 
 /** Serializes the entire local Vault into one portable snapshot (PRD 15.1, 16). */
 export async function exportVault(): Promise<CodexBackup> {
-  const [game_titles, game_instances, trainer_profile, vault, map_progress] = await Promise.all([
-    db.game_titles.toArray(),
-    db.game_instances.toArray(),
-    db.trainer_profile.toArray(),
-    db.vault.toArray(),
-    db.map_progress.toArray(),
-  ]);
+  const [game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies] =
+    await Promise.all([
+      db.game_titles.toArray(),
+      db.game_instances.toArray(),
+      db.trainer_profile.toArray(),
+      db.vault.toArray(),
+      db.map_progress.toArray(),
+      db.collectible_catalog.toArray(),
+      db.collectible_copies.toArray(),
+    ]);
   return {
     version: BACKUP_VERSION,
     exported_at: new Date().toISOString(),
-    data: { game_titles, game_instances, trainer_profile, vault, map_progress },
+    data: { game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies },
   };
 }
 
@@ -57,7 +71,15 @@ export async function importVault(json: string): Promise<void> {
 
   await db.transaction(
     'rw',
-    [db.game_titles, db.game_instances, db.trainer_profile, db.vault, db.map_progress],
+    [
+      db.game_titles,
+      db.game_instances,
+      db.trainer_profile,
+      db.vault,
+      db.map_progress,
+      db.collectible_catalog,
+      db.collectible_copies,
+    ],
     async () => {
       await Promise.all([
         db.game_titles.clear(),
@@ -65,6 +87,8 @@ export async function importVault(json: string): Promise<void> {
         db.trainer_profile.clear(),
         db.vault.clear(),
         db.map_progress.clear(),
+        db.collectible_catalog.clear(),
+        db.collectible_copies.clear(),
       ]);
       await Promise.all([
         db.game_titles.bulkAdd(parsed.data.game_titles),
@@ -72,6 +96,8 @@ export async function importVault(json: string): Promise<void> {
         db.trainer_profile.bulkAdd(parsed.data.trainer_profile),
         db.vault.bulkAdd(parsed.data.vault),
         db.map_progress.bulkAdd(parsed.data.map_progress),
+        db.collectible_catalog.bulkAdd(parsed.data.collectible_catalog),
+        db.collectible_copies.bulkAdd(parsed.data.collectible_copies),
       ]);
     },
   );

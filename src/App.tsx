@@ -3,9 +3,9 @@ import { ConsoleFrame } from './components/ConsoleFrame';
 import { BottomNav } from './components/BottomNav';
 import { MapScreen } from './components/MapScreen';
 import { LinkCable } from './components/LinkCable';
+import { CollectionShelf } from './components/CollectionShelf';
 import { VaultScreen } from './screens/VaultScreen';
 import { TeamScreen } from './screens/TeamScreen';
-import { PlaceholderScreen } from './screens/PlaceholderScreen';
 import { BackupScreen } from './screens/BackupScreen';
 
 function AppHeader() {
@@ -31,10 +31,7 @@ function App() {
           <Route path="/" element={<VaultScreen />} />
           <Route path="/map" element={<MapScreen />} />
           <Route path="/team" element={<TeamScreen />} />
-          <Route
-            path="/collection"
-            element={<PlaceholderScreen title="Game Collection" note="Coming soon" />}
-          />
+          <Route path="/collection" element={<CollectionShelf />} />
           <Route path="/link" element={<LinkCable />} />
           <Route path="/backup" element={<BackupScreen />} />
         </Routes>

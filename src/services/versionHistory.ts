@@ -4,14 +4,17 @@ const RECENT_WINDOW_COUNT = 50;
 const RECENT_WINDOW_DAYS = 30;
 
 async function captureSnapshot(): Promise<DbSnapshot> {
-  const [game_titles, game_instances, trainer_profile, vault, map_progress] = await Promise.all([
-    db.game_titles.toArray(),
-    db.game_instances.toArray(),
-    db.trainer_profile.toArray(),
-    db.vault.toArray(),
-    db.map_progress.toArray(),
-  ]);
-  return { game_titles, game_instances, trainer_profile, vault, map_progress };
+  const [game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies] =
+    await Promise.all([
+      db.game_titles.toArray(),
+      db.game_instances.toArray(),
+      db.trainer_profile.toArray(),
+      db.vault.toArray(),
+      db.map_progress.toArray(),
+      db.collectible_catalog.toArray(),
+      db.collectible_copies.toArray(),
+    ]);
+  return { game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies };
 }
 
 /**
@@ -86,7 +89,15 @@ export async function restoreSnapshot(id: number): Promise<void> {
   const snap = entry.snapshot;
   await db.transaction(
     'rw',
-    [db.game_titles, db.game_instances, db.trainer_profile, db.vault, db.map_progress],
+    [
+      db.game_titles,
+      db.game_instances,
+      db.trainer_profile,
+      db.vault,
+      db.map_progress,
+      db.collectible_catalog,
+      db.collectible_copies,
+    ],
     async () => {
       await Promise.all([
         db.game_titles.clear(),
@@ -94,6 +105,8 @@ export async function restoreSnapshot(id: number): Promise<void> {
         db.trainer_profile.clear(),
         db.vault.clear(),
         db.map_progress.clear(),
+        db.collectible_catalog.clear(),
+        db.collectible_copies.clear(),
       ]);
       await Promise.all([
         db.game_titles.bulkAdd(snap.game_titles),
@@ -101,6 +114,8 @@ export async function restoreSnapshot(id: number): Promise<void> {
         db.trainer_profile.bulkAdd(snap.trainer_profile),
         db.vault.bulkAdd(snap.vault),
         db.map_progress.bulkAdd(snap.map_progress),
+        db.collectible_catalog.bulkAdd(snap.collectible_catalog),
+        db.collectible_copies.bulkAdd(snap.collectible_copies),
       ]);
     },
   );
