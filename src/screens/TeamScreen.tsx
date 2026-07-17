@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { Teambuilder } from '../components/Teambuilder';
 import { DamageCalc } from '../components/DamageCalc';
+import { TeamSynergy } from '../components/TeamSynergy';
 import { BreedingPlanner } from '../components/BreedingPlanner';
 import { IVChainPlanner } from '../components/IVChainPlanner';
 import { EggMoveTree } from '../components/EggMoveTree';
 import { MetaAnalytics } from '../components/MetaAnalytics';
 
-type Tab = 'builder' | 'calc' | 'breed' | 'ivplan' | 'eggmoves' | 'meta';
+type Tab = 'builder' | 'calc' | 'synergy' | 'breed' | 'ivplan' | 'eggmoves' | 'meta';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'builder', label: 'Builder' },
   { id: 'calc', label: 'Calculator' },
+  { id: 'synergy', label: 'Synergy' },
   { id: 'breed', label: 'Breeding' },
   { id: 'ivplan', label: 'IV Chain' },
   { id: 'eggmoves', label: 'Egg Moves' },
@@ -48,6 +50,7 @@ export function TeamScreen() {
       <div className="flex-1 overflow-hidden">
         {tab === 'builder' && <Teambuilder />}
         {tab === 'calc' && <DamageCalc />}
+        {tab === 'synergy' && <TeamSynergy />}
         {tab === 'breed' && <BreedingPlanner />}
         {tab === 'ivplan' && <IVChainPlanner />}
         {tab === 'eggmoves' && <EggMoveTree />}
