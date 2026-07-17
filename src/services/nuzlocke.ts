@@ -1,8 +1,6 @@
 import { db, type VaultEntry } from '../db/schema';
 import { recordSnapshot } from './versionHistory';
-
-/** Reserved box_index for fainted Nuzlocke specimens — a locked Graveyard box (PRD 10). */
-export const GRAVEYARD_BOX_INDEX = -1;
+import { GRAVEYARD_BOX_INDEX, getNextBoxIndex } from './boxes';
 
 export async function isNuzlockeMode(gameInstanceId: string): Promise<boolean> {
   const instance = await db.game_instances.get(gameInstanceId);
@@ -37,6 +35,7 @@ export async function registerCatch(params: CatchParams): Promise<void> {
   const { uuid, species, pokemonId, routeId, routeLabel, gameInstanceId, level } = params;
   const now = new Date().toISOString();
   const nuzlocke = await isNuzlockeMode(gameInstanceId);
+  const boxIndex = await getNextBoxIndex(gameInstanceId);
 
   const entry: VaultEntry = {
     uuid,
@@ -52,7 +51,7 @@ export async function registerCatch(params: CatchParams): Promise<void> {
     catchLocation: routeLabel,
     origin_game_instance_id: gameInstanceId,
     current_game_instance_id: gameInstanceId,
-    box_index: 0,
+    box_index: boxIndex,
     captured_date: now,
     ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
     evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },

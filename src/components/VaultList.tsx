@@ -1,63 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type VaultEntry } from '../db/schema';
-import { GRAVEYARD_BOX_INDEX, markFainted, setNuzlockeMode } from '../services/nuzlocke';
-import { recordSnapshot } from '../services/versionHistory';
+import { db } from '../db/schema';
+import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
+import { setNuzlockeMode } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { BoxGrid } from './BoxGrid';
+import { getSpriteUrl } from '../services/pokeapi';
 
-function VaultRow({ entry, nuzlocke }: { entry: VaultEntry; nuzlocke: boolean }) {
-  async function toggleBreedingLock() {
-    const nextLocked = !entry.breeding_project_lock?.is_locked;
-    await recordSnapshot(
-      'breeding_lock',
-      `${entry.species} breeding lock turned ${nextLocked ? 'on' : 'off'}`,
-    );
-    await db.vault.update(entry.uuid, {
-      breeding_project_lock: {
-        is_locked: nextLocked,
-        notes: entry.breeding_project_lock?.notes ?? null,
-      },
-    });
-  }
-
-  const locked = entry.breeding_project_lock?.is_locked ?? false;
-
-  return (
-    <li className="flex flex-col gap-1 rounded-md border border-slate-700 bg-slate-900/60 p-2">
-      <div className="flex items-center justify-between">
-        <span className="text-slate-200">
-          {entry.species} <span className="text-slate-500">Lv. {entry.level}</span>
-        </span>
-        {locked && <span className="text-[10px] text-amber-300">Breeding Lock</span>}
-      </div>
-      {entry.catchLocation && <p className="text-[10px] text-slate-500">Caught: {entry.catchLocation}</p>}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={toggleBreedingLock}
-          className={[
-            'rounded border px-2 py-0.5 text-[10px]',
-            locked
-              ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
-              : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-          ].join(' ')}
-        >
-          {locked ? 'Unlock breeding' : 'Lock for breeding'}
-        </button>
-        {nuzlocke && !entry.dead && (
-          <button
-            type="button"
-            onClick={() => void markFainted(entry.uuid)}
-            className="rounded border border-red-500/40 px-2 py-0.5 text-[10px] text-red-300 hover:bg-red-500/10"
-          >
-            Mark fainted
-          </button>
-        )}
-      </div>
-    </li>
-  );
-}
-
-/** PC Box / Vault list, with Nuzlocke enforcement (PRD 10) and Breeding Project Lock (PRD 8.4). */
+/** PC Box / Vault (PRD 6), with Nuzlocke enforcement (PRD 10) and Breeding Project Lock (PRD 8.4). */
 export function VaultList() {
   const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready } = useActiveGameInstance();
   const gameTitle = useLiveQuery(
@@ -79,48 +28,52 @@ export function VaultList() {
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
-      {gameTitle && <p className="text-[10px] text-slate-500">Save: {gameTitle.name}</p>}
-      <button
-        disabled={!ready}
-        type="button"
-        onClick={() => void toggleNuzlocke()}
-        className={[
-          'self-start rounded-md border px-2.5 py-1 text-[10px]',
-          nuzlocke
-            ? 'border-red-500/50 bg-red-500/20 text-red-300'
-            : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-        ].join(' ')}
-      >
-        Nuzlocke Mode: {nuzlocke ? 'ON' : 'OFF'}
-      </button>
-
-      <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-2">
-        <p className="mb-1 font-retro text-[9px] text-slate-300">Box ({active.length})</p>
-        {active.length === 0 && (
-          <p className="text-slate-500">Nothing caught yet — visit the Map to catch your first wild encounter.</p>
-        )}
-        <ul className="flex flex-col gap-1.5">
-          {active.map((entry) => (
-            <VaultRow key={entry.uuid} entry={entry} nuzlocke={nuzlocke} />
-          ))}
-        </ul>
-
-        {graveyard.length > 0 && (
-          <>
-            <p className="mb-1 mt-3 font-retro text-[9px] text-red-400">Graveyard ({graveyard.length})</p>
-            <ul className="flex flex-col gap-1.5">
-              {graveyard.map((entry) => (
-                <li key={entry.uuid} className="rounded-md border border-red-900/40 bg-red-950/20 p-2 opacity-70">
-                  <span className="text-slate-300">
-                    {entry.species} <span className="text-slate-500">Lv. {entry.level}</span>
-                  </span>
-                  <p className="text-[10px] text-red-400">Fainted</p>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+      <div className="flex items-center justify-between">
+        {gameTitle && <p className="text-[10px] text-slate-500">Save: {gameTitle.name}</p>}
+        <button
+          disabled={!ready}
+          type="button"
+          onClick={() => void toggleNuzlocke()}
+          className={[
+            'rounded-md border px-2.5 py-1 text-[10px]',
+            nuzlocke
+              ? 'border-red-500/50 bg-red-500/20 text-red-300'
+              : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+          ].join(' ')}
+        >
+          Nuzlocke Mode: {nuzlocke ? 'ON' : 'OFF'}
+        </button>
       </div>
+
+      {active.length === 0 && graveyard.length === 0 && (
+        <p className="text-slate-500">Nothing caught yet — visit the Map to catch your first wild encounter.</p>
+      )}
+
+      <BoxGrid
+        entries={active}
+        boxSize={gameTitle?.boxes_slots ?? 30}
+        boxCount={gameTitle?.box_count ?? 14}
+        nuzlocke={nuzlocke}
+      />
+
+      {graveyard.length > 0 && (
+        <div className="rounded-lg border border-red-900/40 bg-red-950/20 p-2">
+          <p className="mb-1 font-retro text-[9px] text-red-400">Graveyard ({graveyard.length})</p>
+          <ul className="flex flex-wrap gap-2">
+            {graveyard.map((entry) => (
+              <li key={entry.uuid} className="flex flex-col items-center opacity-70">
+                <img
+                  src={getSpriteUrl(entry.pokemon_id, entry.shiny)}
+                  alt={entry.species}
+                  className="h-8 w-8 grayscale"
+                  style={{ imageRendering: 'pixelated' }}
+                />
+                <span className="text-[9px] text-slate-400">{entry.species}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

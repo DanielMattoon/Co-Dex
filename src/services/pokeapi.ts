@@ -34,6 +34,13 @@ async function cachedFetch<T>(url: string): Promise<T> {
   return data;
 }
 
+const SPRITE_BASE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon';
+
+/** Direct sprite CDN URLs (PRD 3 rule 2 explicitly names this mirror) — no fetch needed, just a stable path by Dex number. */
+export function getSpriteUrl(pokemonId: number, shiny = false): string {
+  return shiny ? `${SPRITE_BASE}/shiny/${pokemonId}.png` : `${SPRITE_BASE}/${pokemonId}.png`;
+}
+
 export interface SpeciesEggData {
   name: string;
   eggGroups: string[];
