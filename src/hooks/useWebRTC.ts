@@ -13,14 +13,22 @@ export interface ChatMessage {
 /**
  * Serverless P2P connection over WebRTC via PeerJS's free public broker
  * (only used for signaling/handshake — all data flows peer-to-peer after
- * connect). Backs Device Sync and Ephemeral Chat (PRD 13.1, 13.4).
+ * connect). Backs Device Sync, Ephemeral Chat, and Direct P2P Trading
+ * (PRD 13.1, 13.2, 13.4).
  *
- * Messages are held in memory only and wiped on disconnect (PRD 13.4) —
- * nothing here ever touches an external server or persists to Dexie.
+ * Chat messages are held in memory only and wiped on disconnect (PRD
+ * 13.4) — nothing here ever touches an external server or persists to
+ * Dexie. Structured (non-string) payloads are routed to onData instead of
+ * the chat log — that's how trade protocol messages ride the same
+ * connection without polluting the chat transcript. onData is called via a
+ * ref so callers can pass a closure that always sees fresh state without
+ * needing to reattach the connection.
  */
-export function useWebRTC() {
+export function useWebRTC(onData?: (data: unknown) => void) {
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
+  const onDataRef = useRef(onData);
+  onDataRef.current = onData;
 
   const [peerId, setPeerId] = useState<string | null>(null);
   const [status, setStatus] = useState<LinkCableStatus>('idle');
@@ -40,6 +48,7 @@ export function useWebRTC() {
       conn.on('open', () => setStatus('connected'));
       conn.on('data', (data) => {
         if (typeof data === 'string') appendMessage('peer', data);
+        else onDataRef.current?.(data);
       });
       conn.on('close', () => {
         setStatus('disconnected');
@@ -95,6 +104,11 @@ export function useWebRTC() {
     [appendMessage],
   );
 
+  /** Sends a structured payload (e.g. trade protocol messages) without touching the chat log. */
+  const sendData = useCallback((data: unknown) => {
+    connRef.current?.send(data);
+  }, []);
+
   const disconnect = useCallback(() => {
     connRef.current?.close();
     connRef.current = null;
@@ -102,5 +116,5 @@ export function useWebRTC() {
     setMessages([]);
   }, []);
 
-  return { peerId, status, messages, errorMessage, connect, sendMessage, disconnect };
+  return { peerId, status, messages, errorMessage, connect, sendMessage, sendData, disconnect };
 }
