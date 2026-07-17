@@ -1,6 +1,7 @@
-import { HashRouter, NavLink, Route, Routes } from 'react-router-dom';
+import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { ConsoleFrame } from './components/ConsoleFrame';
 import { BottomNav } from './components/BottomNav';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { MapScreen } from './components/MapScreen';
 import { LinkCable } from './components/LinkCable';
 import { CollectionShelf } from './components/CollectionShelf';
@@ -23,18 +24,29 @@ function AppHeader() {
   );
 }
 
+function RoutedContent() {
+  // Keyed by path so navigating away from a crashed screen and back gives
+  // it a fresh mount instead of staying stuck on the error fallback.
+  const location = useLocation();
+  return (
+    <ErrorBoundary key={location.pathname}>
+      <Routes>
+        <Route path="/" element={<VaultScreen />} />
+        <Route path="/map" element={<MapScreen />} />
+        <Route path="/team" element={<TeamScreen />} />
+        <Route path="/collection" element={<CollectionShelf />} />
+        <Route path="/link" element={<LinkCable />} />
+        <Route path="/backup" element={<BackupScreen />} />
+      </Routes>
+    </ErrorBoundary>
+  );
+}
+
 function App() {
   return (
     <HashRouter>
       <ConsoleFrame header={<AppHeader />} nav={<BottomNav />}>
-        <Routes>
-          <Route path="/" element={<VaultScreen />} />
-          <Route path="/map" element={<MapScreen />} />
-          <Route path="/team" element={<TeamScreen />} />
-          <Route path="/collection" element={<CollectionShelf />} />
-          <Route path="/link" element={<LinkCable />} />
-          <Route path="/backup" element={<BackupScreen />} />
-        </Routes>
+        <RoutedContent />
       </ConsoleFrame>
     </HashRouter>
   );
