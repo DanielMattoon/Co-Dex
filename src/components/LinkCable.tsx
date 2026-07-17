@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import QRCode from 'qrcode';
 import { useWebRTC, type LinkCableStatus } from '../hooks/useWebRTC';
+import { useNostrLobby } from '../hooks/useNostrLobby';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { db, type VaultEntry } from '../db/schema';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
 import { getSpriteUrl } from '../services/pokeapi';
+import { KNOWN_FORMATS } from '../services/smogonStats';
 import {
   executeTradeSwap,
   isTradeMessage,
@@ -80,9 +82,12 @@ export function LinkCable() {
 
   const { peerId, status, messages, errorMessage, connect, sendMessage, sendData, disconnect } =
     useWebRTC(onTradeData);
+  const { hosting, finding, offers, error: lobbyError, hostBattle, stopHosting, findBattles, stopFinding } =
+    useNostrLobby();
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [remoteId, setRemoteId] = useState('');
   const [draft, setDraft] = useState('');
+  const [lobbyFormat, setLobbyFormat] = useState<string>(KNOWN_FORMATS[0]);
 
   useEffect(() => {
     if (!peerId) return;
@@ -154,6 +159,86 @@ export function LinkCable() {
           >
             Connect
           </button>
+        </div>
+      )}
+
+      {!connected && (
+        <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-2">
+          <p className="mb-2 font-retro text-[9px] text-slate-300">Battle Lobby</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={lobbyFormat}
+              onChange={(e) => setLobbyFormat(e.target.value)}
+              disabled={hosting || finding}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400 disabled:opacity-50"
+            >
+              {KNOWN_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+            {!hosting && !finding && peerId && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => hostBattle(peerId, lobbyFormat)}
+                  className="rounded border border-emerald-500/50 bg-emerald-500/20 px-2 py-1 text-emerald-300 hover:bg-emerald-500/30"
+                >
+                  Host Battle
+                </button>
+                <button
+                  type="button"
+                  onClick={findBattles}
+                  className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30"
+                >
+                  Find Battle
+                </button>
+              </>
+            )}
+            {hosting && (
+              <>
+                <span className="text-emerald-400">Hosting {lobbyFormat} — waiting for a challenger…</span>
+                <button
+                  type="button"
+                  onClick={stopHosting}
+                  className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60"
+                >
+                  Stop
+                </button>
+              </>
+            )}
+            {finding && (
+              <button
+                type="button"
+                onClick={stopFinding}
+                className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60"
+              >
+                Stop searching
+              </button>
+            )}
+          </div>
+          {lobbyError && <p className="mt-1 text-red-400">{lobbyError}</p>}
+          {finding && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {offers.length === 0 && <p className="text-slate-500">Scanning the lobby…</p>}
+              {offers.map((offer) => (
+                <li key={offer.peerId} className="flex items-center justify-between rounded border border-slate-700 bg-slate-900/60 p-1.5">
+                  <span className="text-slate-300">{offer.format}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      connect(offer.peerId);
+                      stopFinding();
+                    }}
+                    className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-0.5 text-cyan-300 hover:bg-cyan-500/30"
+                  >
+                    Challenge
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

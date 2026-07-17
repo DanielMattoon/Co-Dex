@@ -16,6 +16,7 @@
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",
     "leaflet": "^1.9.4",
+    "nostr-tools": "^2.23.12",
     "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",
     "react": "^19.2.7",
