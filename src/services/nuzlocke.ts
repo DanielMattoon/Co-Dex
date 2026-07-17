@@ -63,6 +63,7 @@ export async function registerCatch(params: CatchParams): Promise<void> {
     evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
     moves: [],
     held_item: null,
+    ball: null,
     tags: [],
     reservation_status: { is_reserved: false, target_evolution_id: null },
     breeding_project_lock: { is_locked: false, notes: null },

@@ -91,7 +91,7 @@ export function ShinyHuntWidget() {
   async function markCaught() {
     if (!target || !gameInstanceId) return;
     setRunning(false);
-    await catchFromHunt(gameInstanceId, titleCase(target.name), target.pokemonId, level, encounters);
+    await catchFromHunt(gameInstanceId, titleCase(target.name), target.pokemonId, level, encounters, perEncounter);
     setCaughtMessage(`Shiny ${titleCase(target.name)} added to your Vault!`);
   }
 

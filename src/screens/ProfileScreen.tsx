@@ -5,6 +5,7 @@ import { getOrCreateTrainerProfile, setTrainerName } from '../services/gameInsta
 import { computeBadges, type Badge } from '../services/badges';
 import { renderCertificate, downloadCertificate } from '../services/certificates';
 import { getWantsAndNeeds, type WantsAndNeeds } from '../services/wantsAndNeeds';
+import { Dashboards } from '../components/Dashboards';
 
 /**
  * Trainer Profile / Social Trade Hub (PRD 12.1, 12.4). Ships the Passive
@@ -167,6 +168,8 @@ export function ProfileScreen() {
           <p className="text-slate-500">Loading…</p>
         )}
       </div>
+
+      <Dashboards />
     </div>
   );
 }

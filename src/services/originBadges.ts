@@ -1,4 +1,20 @@
 import { db } from '../db/schema';
+import type { VaultEntry } from '../db/schema';
+
+/** origin_game_instance_id → game title name, for the query grammar's `from:XX` operator (PRD 15.3). */
+export async function resolveOriginTitles(entries: VaultEntry[]): Promise<Map<string, string>> {
+  const instanceIds = [...new Set(entries.map((e) => e.origin_game_instance_id))];
+  if (instanceIds.length === 0) return new Map();
+  const instances = await db.game_instances.bulkGet(instanceIds);
+  const titleIds = [...new Set(instances.filter(Boolean).map((i) => i!.game_title_id))];
+  const titles = await db.game_titles.bulkGet(titleIds);
+  const titleById = new Map(titles.filter(Boolean).map((t) => [t!.game_title_id, t!.name]));
+  const result = new Map<string, string>();
+  for (const instance of instances) {
+    if (instance) result.set(instance.game_instance_id, titleById.get(instance.game_title_id) ?? '');
+  }
+  return result;
+}
 
 export interface OriginBadge {
   gameInstanceId: string;

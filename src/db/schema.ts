@@ -81,6 +81,8 @@ export interface VaultEntry {
   moves: string[];
   held_item: string | null;
   tags: string[];
+  /** Poké Ball type, freeform (Smart-Map Importer/query grammar `ball:"X"`, PRD 15.1, 15.3). */
+  ball: string | null;
   reservation_status: ReservationStatus;
   breeding_project_lock: BreedingProjectLock;
   history_log: HistoryLogEntry[];
@@ -103,6 +105,20 @@ export interface BoxLabel {
   game_instance_id: string;
   box_number: number;
   name: string;
+}
+
+/**
+ * A completed shiny hunt (PRD 15.4's luck-ratio scatterplot needs real
+ * encounters-vs-odds data points, not just the current hunt's live state).
+ * Logged once, on catch, by the Shiny Hunt Companion (PRD 11.2).
+ */
+export interface ShinyHuntLogEntry {
+  id: string;
+  species: string;
+  pokemon_id: number;
+  encounters: number;
+  per_encounter_probability: number;
+  timestamp: string;
 }
 
 /**
@@ -200,6 +216,7 @@ export const db = new Dexie('CoDexDatabase') as Dexie & {
   collectible_copies: EntityTable<CollectibleCopy, 'copy_id'>;
   teams: EntityTable<Team, 'team_id'>;
   box_labels: EntityTable<BoxLabel, 'id'>;
+  shiny_hunt_log: EntityTable<ShinyHuntLogEntry, 'id'>;
 };
 
 db.version(1).stores({
@@ -226,4 +243,8 @@ db.version(4).stores({
 
 db.version(5).stores({
   box_labels: 'id, game_instance_id',
+});
+
+db.version(6).stores({
+  shiny_hunt_log: 'id, pokemon_id, timestamp',
 });

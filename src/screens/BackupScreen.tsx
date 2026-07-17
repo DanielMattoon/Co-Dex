@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
 import { useGoogleDrive } from '../hooks/useGoogleDrive';
 import { downloadVaultBackup, exportVault, importVault } from '../services/vaultExport';
+import { exportVaultCsv, exportVaultJson } from '../services/vaultTable';
 import { VersionHistoryPanel } from '../components/VersionHistoryPanel';
 import { GameSavesPanel } from '../components/GameSavesPanel';
+import { SmartMapImporter } from '../components/SmartMapImporter';
 
-type Tab = 'backup' | 'history' | 'saves';
+type Tab = 'backup' | 'history' | 'saves' | 'import';
 
 function BackupTab() {
   const drive = useGoogleDrive();
@@ -59,6 +61,27 @@ function BackupTab() {
           />
         </div>
         {localMessage && <p className="mt-2 text-slate-400">{localMessage}</p>}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+        <h2 className="mb-2 font-retro text-[9px] text-slate-200">Open-Gate Export</h2>
+        <p className="mb-3 text-slate-400">A clean, structured export of just the Vault, for your own spreadsheets/tools.</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void exportVaultJson()}
+            className="rounded-md border border-slate-600 px-3 py-1.5 text-slate-300 hover:bg-slate-700/60"
+          >
+            Export Vault (JSON)
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportVaultCsv()}
+            className="rounded-md border border-slate-600 px-3 py-1.5 text-slate-300 hover:bg-slate-700/60"
+          >
+            Export Vault (CSV)
+          </button>
+        </div>
       </section>
 
       <section className="rounded-lg border border-slate-700 bg-slate-800/50 p-3">
@@ -121,6 +144,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'backup', label: 'Backup' },
   { id: 'history', label: 'History' },
   { id: 'saves', label: 'Saves' },
+  { id: 'import', label: 'Smart Import' },
 ];
 
 export function BackupScreen() {
@@ -149,6 +173,7 @@ export function BackupScreen() {
         {tab === 'backup' && <BackupTab />}
         {tab === 'history' && <VersionHistoryPanel />}
         {tab === 'saves' && <GameSavesPanel />}
+        {tab === 'import' && <SmartMapImporter />}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
@@ -6,8 +6,11 @@ import { setNuzlockeMode, declareVictory } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { BoxGrid } from './BoxGrid';
 import { LivingDexList } from './LivingDexList';
+import { QueryBar } from './QueryBar';
 import { getSpriteUrl } from '../services/pokeapi';
 import { getCatchNextTarget, type CatchNextTarget } from '../services/catchNext';
+import { parseQuery, matchesQuery } from '../services/queryGrammar';
+import { resolveOriginTitles } from '../services/originBadges';
 
 type ViewMode = 'box' | 'list';
 
@@ -23,13 +26,28 @@ export function VaultList() {
     () => (gameInstanceId ? db.vault.where('current_game_instance_id').equals(gameInstanceId).toArray() : []),
     [gameInstanceId],
   );
-  const active = (entries ?? []).filter((e) => e.box_index !== GRAVEYARD_BOX_INDEX);
+  const allActive = (entries ?? []).filter((e) => e.box_index !== GRAVEYARD_BOX_INDEX);
   const graveyard = (entries ?? []).filter((e) => e.box_index === GRAVEYARD_BOX_INDEX);
-  const caughtIds = new Set(active.map((e) => e.pokemon_id));
+  const caughtIds = new Set(allActive.map((e) => e.pokemon_id));
 
   const [viewMode, setViewMode] = useState<ViewMode>('box');
   const [catchNext, setCatchNext] = useState<CatchNextTarget | null | undefined>(undefined);
   const [confirmingVictory, setConfirmingVictory] = useState(false);
+  const [query, setQuery] = useState('');
+  const [originTitles, setOriginTitles] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    resolveOriginTitles(allActive).then(setOriginTitles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allActive.length]);
+
+  const active = useMemo(() => {
+    const trimmed = query.trim();
+    if (!trimmed) return allActive;
+    const parsed = parseQuery(trimmed);
+    return allActive.filter((e) => matchesQuery(e, parsed, { originTitleByInstanceId: originTitles }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allActive, query, originTitles]);
 
   async function toggleNuzlocke() {
     if (!gameInstanceId) return;
@@ -114,6 +132,9 @@ export function VaultList() {
         </button>
       </div>
 
+      <QueryBar value={query} onChange={setQuery} />
+      {query.trim() && <p className="text-slate-500">{active.length} match{active.length === 1 ? '' : 'es'}</p>}
+
       {catchNext !== undefined && (
         <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-2">
           {catchNext ? (
@@ -127,7 +148,7 @@ export function VaultList() {
         </div>
       )}
 
-      {active.length === 0 && graveyard.length === 0 && (
+      {allActive.length === 0 && graveyard.length === 0 && (
         <p className="text-slate-500">Nothing caught yet — visit the Map to catch your first wild encounter.</p>
       )}
 

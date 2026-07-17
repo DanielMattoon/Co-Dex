@@ -14,6 +14,7 @@ export async function catchFromHunt(
   pokemonId: number,
   level: number,
   encounterCount: number,
+  perEncounterProbability: number,
 ): Promise<void> {
   await recordSnapshot('catch', `Caught a shiny ${species} after a hunt!`);
   const boxIndex = await getNextBoxIndex(gameInstanceId);
@@ -38,11 +39,21 @@ export async function catchFromHunt(
     evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
     moves: [],
     held_item: null,
+    ball: null,
     tags: ['shiny-hunt'],
     reservation_status: { is_reserved: false, target_evolution_id: null },
     breeding_project_lock: { is_locked: false, notes: null },
     history_log: [{ timestamp: now, action: 'caught', details: `Shiny hunt completed after ${encounterCount} encounter(s).` }],
     is_sandbox_anomalous: false,
     sort_priority: boxIndex,
+  });
+
+  await db.shiny_hunt_log.add({
+    id: crypto.randomUUID(),
+    species,
+    pokemon_id: pokemonId,
+    encounters: encounterCount,
+    per_encounter_probability: perEncounterProbability,
+    timestamp: now,
   });
 }

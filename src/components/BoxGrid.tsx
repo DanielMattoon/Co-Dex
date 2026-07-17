@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import type { VaultEntry } from '../db/schema';
 import { getSpriteUrl } from '../services/pokeapi';
 import { boxToGlobalIndex, deleteBox, getBoxLabels, setBoxLabel } from '../services/boxes';
 import { getOriginBadgesForSpecies, type OriginBadge } from '../services/originBadges';
+import { bulkAddTag, bulkDelete, bulkToggleFainted, bulkToggleShiny } from '../services/bulkEdit';
 import { InfoPanel } from './InfoPanel';
 
 interface BoxGridProps {
@@ -30,6 +31,15 @@ export function BoxGrid({ entries, boxSize, boxCount, nuzlocke, gameInstanceId }
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [badges, setBadges] = useState<Map<number, OriginBadge[]>>(new Map());
 
+  // --- Marquee multi-select + hotkeys (PRD 15.2, desktop/web only) ---
+  const [multiSelected, setMultiSelected] = useState<Set<string>>(new Set());
+  const [taggingSelection, setTaggingSelection] = useState(false);
+  const [tagDraft, setTagDraft] = useState('');
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const slotRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const dragState = useRef<{ startX: number; startY: number } | null>(null);
+
   const byGlobalIndex = new Map(entries.map((e) => [e.box_index, e]));
   const slots = Array.from({ length: boxSize }, (_, localSlot) => {
     const globalIndex = boxToGlobalIndex(boxNumber, localSlot, boxSize);
@@ -48,6 +58,86 @@ export function BoxGrid({ entries, boxSize, boxCount, nuzlocke, gameInstanceId }
     getOriginBadgesForSpecies(ids, gameInstanceId).then(setBadges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boxNumber, entries, gameInstanceId]);
+
+  // Clear multi-select and dismiss pending panels when the visible box changes.
+  useEffect(() => {
+    setMultiSelected(new Set());
+    setTaggingSelection(false);
+    setConfirmingClear(false);
+  }, [boxNumber]);
+
+  useEffect(() => {
+    if (multiSelected.size === 0) return;
+
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
+
+      const uuids = [...multiSelected];
+      if (e.key === 's' || e.key === 'S') {
+        e.preventDefault();
+        void bulkToggleShiny(uuids);
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        void bulkToggleFainted(uuids);
+      } else if (e.key === 'h' || e.key === 'H') {
+        e.preventDefault();
+        setTaggingSelection(true);
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        setConfirmingClear(true);
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [multiSelected]);
+
+  function rectsIntersect(a: DOMRect, b: DOMRect): boolean {
+    return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+  }
+
+  function updateSelectionFromDrag(startX: number, startY: number, endX: number, endY: number) {
+    const dragRect = new DOMRect(Math.min(startX, endX), Math.min(startY, endY), Math.abs(endX - startX), Math.abs(endY - startY));
+    const next = new Set<string>();
+    for (const [localSlot, el] of slotRefs.current) {
+      const entry = slots[localSlot];
+      if (!entry) continue;
+      if (rectsIntersect(dragRect, el.getBoundingClientRect())) next.add(entry.uuid);
+    }
+    setMultiSelected(next);
+  }
+
+  function handleGridMouseDown(e: ReactMouseEvent) {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    setSelectedUuid(null);
+    dragState.current = { startX: e.clientX, startY: e.clientY };
+
+    function onMove(moveEvent: MouseEvent) {
+      if (!dragState.current) return;
+      updateSelectionFromDrag(dragState.current.startX, dragState.current.startY, moveEvent.clientX, moveEvent.clientY);
+    }
+    function onUp() {
+      dragState.current = null;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
+  async function handleAddTagToSelection() {
+    await bulkAddTag([...multiSelected], tagDraft);
+    setTagDraft('');
+    setTaggingSelection(false);
+  }
+
+  async function handleClearSelection() {
+    await bulkDelete([...multiSelected]);
+    setMultiSelected(new Set());
+    setConfirmingClear(false);
+  }
 
   function startEditLabel() {
     setLabelDraft(boxLabel ?? `Box ${boxNumber}`);
@@ -112,22 +202,46 @@ export function BoxGrid({ entries, boxSize, boxCount, nuzlocke, gameInstanceId }
         </button>
       </div>
 
-      <div className="grid grid-cols-6 gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5">
+      <div
+        ref={gridRef}
+        onMouseDown={handleGridMouseDown}
+        className="grid grid-cols-6 gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5 select-none"
+      >
         {slots.map((entry, localSlot) => {
           const speciesBadges = entry ? badges.get(entry.pokemon_id) ?? [] : [];
+          const isMultiSelected = entry ? multiSelected.has(entry.uuid) : false;
           return (
             <button
               key={localSlot}
+              ref={(el) => {
+                if (el) slotRefs.current.set(localSlot, el);
+                else slotRefs.current.delete(localSlot);
+              }}
               type="button"
               disabled={!entry}
-              onClick={() => entry && setSelectedUuid(entry.uuid)}
+              onClick={(e) => {
+                if (!entry) return;
+                if (e.shiftKey) {
+                  setMultiSelected((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(entry.uuid)) next.delete(entry.uuid);
+                    else next.add(entry.uuid);
+                    return next;
+                  });
+                } else {
+                  setMultiSelected(new Set());
+                  setSelectedUuid(entry.uuid);
+                }
+              }}
               className={[
                 'relative flex aspect-square items-center justify-center rounded border',
-                entry
-                  ? selectedUuid === entry.uuid
-                    ? 'border-cyan-400 bg-slate-900/80'
-                    : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
-                  : 'border-slate-800/60 bg-slate-900/20',
+                isMultiSelected
+                  ? 'border-amber-400 bg-amber-500/10'
+                  : entry
+                    ? selectedUuid === entry.uuid
+                      ? 'border-cyan-400 bg-slate-900/80'
+                      : 'border-slate-700 bg-slate-900/60 hover:border-slate-500'
+                    : 'border-slate-800/60 bg-slate-900/20',
                 entry?.breeding_project_lock?.is_locked ? 'ring-1 ring-amber-400/60' : '',
                 entry?.reservation_status?.is_reserved ? 'border-dashed border-amber-400' : '',
               ].join(' ')}
@@ -157,6 +271,68 @@ export function BoxGrid({ entries, boxSize, boxCount, nuzlocke, gameInstanceId }
           );
         })}
       </div>
+
+      {multiSelected.size > 0 && !taggingSelection && !confirmingClear && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-300">
+          <span>{multiSelected.size} selected</span>
+          <span className="text-slate-500">Shift+drag or Shift+click to adjust · (S) shiny · (C) fainted · (H) tag · (Del) clear</span>
+          <button
+            type="button"
+            onClick={() => setMultiSelected(new Set())}
+            className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
+      {taggingSelection && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2">
+          <input
+            value={tagDraft}
+            onChange={(e) => setTagDraft(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && void handleAddTagToSelection()}
+            autoFocus
+            placeholder={`Tag ${multiSelected.size} specimen(s)…`}
+            className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-amber-400"
+          />
+          <button type="button" onClick={() => void handleAddTagToSelection()} className="rounded border border-amber-400 px-2 py-1 text-amber-300">
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTaggingSelection(false);
+              setTagDraft('');
+            }}
+            className="rounded border border-slate-700 px-2 py-1 text-slate-400"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {confirmingClear && (
+        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-2">
+          <p className="mb-2 text-red-300">Clear {multiSelected.size} selected specimen(s) permanently? This can be undone from Version History.</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleClearSelection()}
+              className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30"
+            >
+              Clear permanently
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingClear(false)}
+              className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {confirmingDelete && (
         <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-2">
