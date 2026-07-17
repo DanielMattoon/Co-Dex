@@ -12,6 +12,12 @@ export async function setNuzlockeMode(gameInstanceId: string, enabled: boolean):
   await db.game_instances.update(gameInstanceId, { isNuzlockeMode: enabled });
 }
 
+/** Declares a Nuzlocke run won (PRD 12.4's "first Nuzlocke victory" badge) — a one-way flag, never auto-detected. */
+export async function declareVictory(gameInstanceId: string): Promise<void> {
+  await recordSnapshot('nuzlocke_victory', 'Declared Nuzlocke victory!');
+  await db.game_instances.update(gameInstanceId, { is_victory: true });
+}
+
 /** Whether a route's first-encounter slot is still open (PRD 10, rule 2). */
 export async function canCatchOnRoute(routeId: string, gameInstanceId: string): Promise<boolean> {
   if (!(await isNuzlockeMode(gameInstanceId))) return true;

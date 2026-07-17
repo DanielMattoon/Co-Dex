@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
-import { setNuzlockeMode } from '../services/nuzlocke';
+import { setNuzlockeMode, declareVictory } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { BoxGrid } from './BoxGrid';
 import { LivingDexList } from './LivingDexList';
@@ -29,10 +29,17 @@ export function VaultList() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('box');
   const [catchNext, setCatchNext] = useState<CatchNextTarget | null | undefined>(undefined);
+  const [confirmingVictory, setConfirmingVictory] = useState(false);
 
   async function toggleNuzlocke() {
     if (!gameInstanceId) return;
     await setNuzlockeMode(gameInstanceId, !nuzlocke);
+  }
+
+  async function handleDeclareVictory() {
+    if (!gameInstanceId) return;
+    await declareVictory(gameInstanceId);
+    setConfirmingVictory(false);
   }
 
   function rollCatchNext() {
@@ -57,6 +64,28 @@ export function VaultList() {
           Nuzlocke Mode: {nuzlocke ? 'ON' : 'OFF'}
         </button>
       </div>
+
+      {nuzlocke && !gameInstance?.is_victory && !confirmingVictory && (
+        <button
+          type="button"
+          onClick={() => setConfirmingVictory(true)}
+          className="rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1 text-left text-amber-300 hover:bg-amber-500/20"
+        >
+          🏆 Declare Victory
+        </button>
+      )}
+      {confirmingVictory && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 px-2.5 py-1.5 text-amber-300">
+          <span className="flex-1">Declare this run a victory? Unlocks the Nuzlocke Champion badge.</span>
+          <button type="button" onClick={() => void handleDeclareVictory()} className="rounded border border-amber-400 px-2 py-0.5 hover:bg-amber-500/20">
+            Confirm
+          </button>
+          <button type="button" onClick={() => setConfirmingVictory(false)} className="rounded border border-slate-600 px-2 py-0.5 text-slate-400 hover:bg-slate-800">
+            Cancel
+          </button>
+        </div>
+      )}
+      {gameInstance?.is_victory && <p className="text-amber-300">🏆 Nuzlocke Champion — this run is won!</p>}
 
       <div className="flex items-center gap-2">
         <div className="flex gap-1.5">

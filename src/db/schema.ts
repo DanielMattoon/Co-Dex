@@ -13,11 +13,17 @@ export interface GameInstance {
   game_title_id: string;
   isNuzlockeMode: boolean;
   created_date: string;
+  /** Set once a Nuzlocke run is declared won (PRD 12.4's "first Nuzlocke victory" badge). */
+  is_victory: boolean;
 }
 
 export interface TrainerProfile {
   id: string;
   active_game_instance_id: string | null;
+  /** Shown on the Public Profile / Trophy Case (PRD 12.1). */
+  trainer_name: string;
+  /** Completed Link Cable trades (PRD 12.4's trade-count badge tier), incremented on each executed swap. */
+  link_cable_trade_count: number;
 }
 
 export interface IVs {

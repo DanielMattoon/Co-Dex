@@ -60,8 +60,29 @@ export async function getActiveGameInstanceId(): Promise<string> {
   return createGameInstance(SEED_TITLES[0].game_title_id, false);
 }
 
+/** Fetches the singleton trainer_profile row, creating it with defaults on first use. */
+export async function getOrCreateTrainerProfile(): Promise<import('../db/schema').TrainerProfile> {
+  const existing = await db.trainer_profile.get(TRAINER_PROFILE_ID);
+  if (existing) return existing;
+  const created = { id: TRAINER_PROFILE_ID, active_game_instance_id: null, trainer_name: 'Trainer', link_cable_trade_count: 0 };
+  await db.trainer_profile.put(created);
+  return created;
+}
+
 export async function setActiveGameInstance(gameInstanceId: string): Promise<void> {
-  await db.trainer_profile.put({ id: TRAINER_PROFILE_ID, active_game_instance_id: gameInstanceId });
+  const profile = await getOrCreateTrainerProfile();
+  await db.trainer_profile.put({ ...profile, active_game_instance_id: gameInstanceId });
+}
+
+export async function setTrainerName(name: string): Promise<void> {
+  const profile = await getOrCreateTrainerProfile();
+  await db.trainer_profile.put({ ...profile, trainer_name: name });
+}
+
+/** Bumped on every executed Link Cable trade (PRD 12.4 trade-count badge tiers). */
+export async function incrementTradeCount(): Promise<void> {
+  const profile = await getOrCreateTrainerProfile();
+  await db.trainer_profile.put({ ...profile, link_cable_trade_count: profile.link_cable_trade_count + 1 });
 }
 
 export async function createGameInstance(gameTitleId: string, isNuzlockeMode: boolean): Promise<string> {
@@ -72,6 +93,7 @@ export async function createGameInstance(gameTitleId: string, isNuzlockeMode: bo
     game_title_id: gameTitleId,
     isNuzlockeMode,
     created_date: new Date().toISOString(),
+    is_victory: false,
   });
   await setActiveGameInstance(gameInstanceId);
   return gameInstanceId;

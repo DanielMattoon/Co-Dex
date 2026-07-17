@@ -1,6 +1,7 @@
 import { db, type VaultEntry } from '../db/schema';
 import { recordSnapshot } from './versionHistory';
 import { getNextBoxIndex } from './boxes';
+import { incrementTradeCount } from './gameInstances';
 
 export interface TradeOfferSummary {
   uuid: string;
@@ -56,4 +57,6 @@ export async function executeTradeSwap(
       { timestamp: now, action: 'traded', details: 'Received via Link Cable trade.' },
     ],
   });
+
+  await incrementTradeCount();
 }

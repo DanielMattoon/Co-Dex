@@ -8,6 +8,7 @@ import { CollectionShelf } from './components/CollectionShelf';
 import { VaultScreen } from './screens/VaultScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { BackupScreen } from './screens/BackupScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 
 function AppHeader() {
   return (
@@ -36,6 +37,7 @@ function RoutedContent() {
         <Route path="/team" element={<TeamScreen />} />
         <Route path="/collection" element={<CollectionShelf />} />
         <Route path="/link" element={<LinkCable />} />
+        <Route path="/profile" element={<ProfileScreen />} />
         <Route path="/backup" element={<BackupScreen />} />
       </Routes>
     </ErrorBoundary>
