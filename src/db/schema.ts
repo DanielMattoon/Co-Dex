@@ -79,6 +79,8 @@ export interface VaultEntry {
   breeding_project_lock: BreedingProjectLock;
   history_log: HistoryLogEntry[];
   is_sandbox_anomalous: boolean;
+  /** Floating-point Relative Priority Index for Custom View drag-reordering (PRD 6.3, 6.8). */
+  sort_priority: number;
 }
 
 export interface MapProgress {
@@ -87,6 +89,14 @@ export interface MapProgress {
   game_instance_id: string;
   firstEncounterLogged: boolean;
   itemChecklist: Record<string, boolean>;
+}
+
+/** Custom name for a box (PRD 6.1 — "Custom names are always allowed"). */
+export interface BoxLabel {
+  id: string;
+  game_instance_id: string;
+  box_number: number;
+  name: string;
 }
 
 /**
@@ -157,25 +167,19 @@ export interface Team {
   updated_date: string;
 }
 
-/** A full snapshot of every other table, used for Version History undo (PRD 14.3). */
-export interface DbSnapshot {
-  game_titles: GameTitle[];
-  game_instances: GameInstance[];
-  trainer_profile: TrainerProfile[];
-  vault: VaultEntry[];
-  map_progress: MapProgress[];
-  collectible_catalog: CollectibleCatalogItem[];
-  collectible_copies: CollectibleCopy[];
-  teams: Team[];
-}
-
 export interface VersionHistoryEntry {
   id?: number;
   timestamp: string;
   action: string;
   summary: string;
-  /** Absent on compacted entries — a rough daily summary survives, but it's no longer revertible (PRD 14.3 pruning policy). */
-  snapshot: DbSnapshot | null;
+  /**
+   * A snapshot of every other table at the moment this entry was recorded,
+   * keyed by table name — generic so new tables are covered automatically
+   * (PRD 14.3) without editing this type. Absent on compacted entries: a
+   * rough daily summary survives, but it's no longer revertible (pruning
+   * policy).
+   */
+  snapshot: Record<string, unknown[]> | null;
   compacted: boolean;
 }
 
@@ -189,6 +193,7 @@ export const db = new Dexie('CoDexDatabase') as Dexie & {
   collectible_catalog: EntityTable<CollectibleCatalogItem, 'catalog_id'>;
   collectible_copies: EntityTable<CollectibleCopy, 'copy_id'>;
   teams: EntityTable<Team, 'team_id'>;
+  box_labels: EntityTable<BoxLabel, 'id'>;
 };
 
 db.version(1).stores({
@@ -211,4 +216,8 @@ db.version(3).stores({
 
 db.version(4).stores({
   teams: 'team_id, created_date',
+});
+
+db.version(5).stores({
+  box_labels: 'id, game_instance_id',
 });

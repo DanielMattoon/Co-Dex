@@ -68,6 +68,7 @@ export async function registerCatch(params: CatchParams): Promise<void> {
       },
     ],
     is_sandbox_anomalous: false,
+    sort_priority: boxIndex,
   };
   await recordSnapshot('catch', `Caught ${species} on ${routeLabel}`);
   await db.vault.put(entry);

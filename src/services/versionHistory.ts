@@ -1,38 +1,17 @@
-import { db, type DbSnapshot, type VersionHistoryEntry } from '../db/schema';
+import { db, type VersionHistoryEntry } from '../db/schema';
 
 const RECENT_WINDOW_COUNT = 50;
 const RECENT_WINDOW_DAYS = 30;
 
-async function captureSnapshot(): Promise<DbSnapshot> {
-  const [
-    game_titles,
-    game_instances,
-    trainer_profile,
-    vault,
-    map_progress,
-    collectible_catalog,
-    collectible_copies,
-    teams,
-  ] = await Promise.all([
-    db.game_titles.toArray(),
-    db.game_instances.toArray(),
-    db.trainer_profile.toArray(),
-    db.vault.toArray(),
-    db.map_progress.toArray(),
-    db.collectible_catalog.toArray(),
-    db.collectible_copies.toArray(),
-    db.teams.toArray(),
-  ]);
-  return {
-    game_titles,
-    game_instances,
-    trainer_profile,
-    vault,
-    map_progress,
-    collectible_catalog,
-    collectible_copies,
-    teams,
-  };
+/** Every table except the history log itself — new tables are picked up automatically. */
+function snapshotableTables() {
+  return db.tables.filter((t) => t.name !== 'version_history');
+}
+
+async function captureSnapshot(): Promise<Record<string, unknown[]>> {
+  const tables = snapshotableTables();
+  const rows = await Promise.all(tables.map((t) => t.toArray()));
+  return Object.fromEntries(tables.map((t, i) => [t.name, rows[i]]));
 }
 
 /**
@@ -105,39 +84,9 @@ export async function restoreSnapshot(id: number): Promise<void> {
     throw new Error('This entry has been compacted into a daily summary and can no longer be restored.');
   }
   const snap = entry.snapshot;
-  await db.transaction(
-    'rw',
-    [
-      db.game_titles,
-      db.game_instances,
-      db.trainer_profile,
-      db.vault,
-      db.map_progress,
-      db.collectible_catalog,
-      db.collectible_copies,
-      db.teams,
-    ],
-    async () => {
-      await Promise.all([
-        db.game_titles.clear(),
-        db.game_instances.clear(),
-        db.trainer_profile.clear(),
-        db.vault.clear(),
-        db.map_progress.clear(),
-        db.collectible_catalog.clear(),
-        db.collectible_copies.clear(),
-        db.teams.clear(),
-      ]);
-      await Promise.all([
-        db.game_titles.bulkAdd(snap.game_titles),
-        db.game_instances.bulkAdd(snap.game_instances),
-        db.trainer_profile.bulkAdd(snap.trainer_profile),
-        db.vault.bulkAdd(snap.vault),
-        db.map_progress.bulkAdd(snap.map_progress),
-        db.collectible_catalog.bulkAdd(snap.collectible_catalog),
-        db.collectible_copies.bulkAdd(snap.collectible_copies),
-        db.teams.bulkAdd(snap.teams),
-      ]);
-    },
-  );
+  const tables = snapshotableTables();
+  await db.transaction('rw', tables, async () => {
+    await Promise.all(tables.map((t) => t.clear()));
+    await Promise.all(tables.map((t) => (snap[t.name] ? t.bulkAdd(snap[t.name]) : Promise.resolve())));
+  });
 }

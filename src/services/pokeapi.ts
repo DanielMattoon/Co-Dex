@@ -13,6 +13,19 @@ function toId(name: string): string {
     .replace(/[’'.]/g, '');
 }
 
+/**
+ * PokéAPI returns species names lowercase-with-hyphens ("pidgeotto",
+ * "nidoran-f"); the rest of the app (Vault entries, Teambuilder, @smogon/calc)
+ * uses Title-Case ("Pidgeotto", "Nidoran-F"). Evolution chain data needs this
+ * to compare/display correctly against VaultEntry.species.
+ */
+function formatSpeciesName(rawName: string): string {
+  return rawName
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join('-');
+}
+
 async function cachedFetch<T>(url: string): Promise<T> {
   const cacheKey = `pokeapi_cache:${url}`;
   const stored = localStorage.getItem(cacheKey);
@@ -55,7 +68,7 @@ interface RawSpeciesResponse {
 }
 
 interface RawSpeciesListResponse {
-  results: { name: string }[];
+  results: { name: string; url: string }[];
 }
 
 export async function getSpeciesEggData(name: string): Promise<SpeciesEggData> {
@@ -70,6 +83,20 @@ export async function getSpeciesEggData(name: string): Promise<SpeciesEggData> {
 export async function listAllSpeciesNames(): Promise<string[]> {
   const data = await cachedFetch<RawSpeciesListResponse>(`${BASE}/pokemon-species?limit=2000`);
   return data.results.map((r) => r.name);
+}
+
+export interface SpeciesWithId {
+  name: string;
+  pokemonId: number;
+}
+
+/** National Dex-ordered species with their real Dex numbers (PRD 6.13), parsed from each entry's own URL. */
+export async function listAllSpeciesWithIds(): Promise<SpeciesWithId[]> {
+  const data = await cachedFetch<RawSpeciesListResponse>(`${BASE}/pokemon-species?limit=2000`);
+  return data.results.map((r) => {
+    const id = Number(r.url.replace(/\/$/, '').split('/').pop());
+    return { name: r.name, pokemonId: id };
+  });
 }
 
 // --- Item Dex (PRD 6.15) ---
@@ -154,4 +181,104 @@ export async function getLearnMethodsForSpeciesMove(species: string, move: strin
   const entry = data.moves.find((m) => m.move.name === toId(move));
   if (!entry) return [];
   return [...new Set(entry.version_group_details.map((d) => d.move_learn_method.name))];
+}
+
+// --- Per-Pokémon Info Panel (PRD 6.12) ---
+
+export interface LevelUpMove {
+  move: string;
+  level: number;
+}
+
+/** A species' level-up learnset, sorted by level (PRD 6.12's "level-up path"). */
+export async function getLevelUpMoves(species: string): Promise<LevelUpMove[]> {
+  const data = await cachedFetch<RawPokemonResponse>(`${BASE}/pokemon/${toId(species)}`);
+  const moves: LevelUpMove[] = [];
+  for (const entry of data.moves) {
+    const levelDetail = entry.version_group_details.find((d) => d.move_learn_method.name === 'level-up');
+    if (levelDetail) {
+      const level = (levelDetail as unknown as { level_learned_at: number }).level_learned_at;
+      moves.push({ move: entry.move.name, level });
+    }
+  }
+  return moves.sort((a, b) => a.level - b.level);
+}
+
+export interface SpeciesFlags {
+  isLegendary: boolean;
+  isMythical: boolean;
+  evolutionChainUrl: string;
+}
+
+interface RawSpeciesFlagsResponse {
+  is_legendary: boolean;
+  is_mythical: boolean;
+  evolution_chain: { url: string };
+}
+
+export async function getSpeciesFlags(species: string): Promise<SpeciesFlags> {
+  const data = await cachedFetch<RawSpeciesFlagsResponse>(`${BASE}/pokemon-species/${toId(species)}`);
+  return {
+    isLegendary: data.is_legendary,
+    isMythical: data.is_mythical,
+    evolutionChainUrl: data.evolution_chain.url,
+  };
+}
+
+export interface EvolutionEdge {
+  from: string;
+  to: string;
+  trigger: string;
+  minLevel: number | null;
+  item: string | null;
+  requiresTrade: boolean;
+}
+
+export interface EvolutionChainData {
+  species: string[];
+  edges: EvolutionEdge[];
+}
+
+interface RawEvolutionDetail {
+  trigger: { name: string };
+  min_level: number | null;
+  item: { name: string } | null;
+  trade_species: { name: string } | null;
+}
+
+interface RawEvolutionNode {
+  species: { name: string };
+  evolution_details: RawEvolutionDetail[];
+  evolves_to: RawEvolutionNode[];
+}
+
+interface RawEvolutionChainResponse {
+  chain: RawEvolutionNode;
+}
+
+function flattenEvolutionChain(node: RawEvolutionNode, species: string[], edges: EvolutionEdge[]): void {
+  species.push(formatSpeciesName(node.species.name));
+  for (const next of node.evolves_to) {
+    const detail = next.evolution_details[0];
+    edges.push({
+      from: formatSpeciesName(node.species.name),
+      to: formatSpeciesName(next.species.name),
+      trigger: detail?.trigger.name ?? 'level-up',
+      minLevel: detail?.min_level ?? null,
+      item: detail?.item?.name ?? null,
+      requiresTrade: detail?.trigger.name === 'trade',
+    });
+    flattenEvolutionChain(next, species, edges);
+  }
+}
+
+/** The whole evolution family for a species (PRD 6.7, 6.12) — trade-only evolutions are flagged via requiresTrade. */
+export async function getEvolutionChain(species: string): Promise<EvolutionChainData> {
+  const flags = await getSpeciesFlags(species);
+  const chainId = flags.evolutionChainUrl.replace(/\/$/, '').split('/').pop();
+  const data = await cachedFetch<RawEvolutionChainResponse>(`${BASE}/evolution-chain/${chainId}`);
+  const speciesList: string[] = [];
+  const edges: EvolutionEdge[] = [];
+  flattenEvolutionChain(data.chain, speciesList, edges);
+  return { species: speciesList, edges };
 }
