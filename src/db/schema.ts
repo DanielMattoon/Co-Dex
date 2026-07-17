@@ -137,6 +137,26 @@ export interface CollectibleCopy {
   tags: string[];
 }
 
+/** One party slot in a built Team (PRD 8.1, 8.3). */
+export interface TeamSlot {
+  species: string;
+  level: number;
+  item: string;
+  ability: string;
+  nature: string;
+  moves: string[];
+  evs: EVs;
+  ivs: IVs;
+}
+
+export interface Team {
+  team_id: string;
+  name: string;
+  slots: TeamSlot[];
+  created_date: string;
+  updated_date: string;
+}
+
 /** A full snapshot of every other table, used for Version History undo (PRD 14.3). */
 export interface DbSnapshot {
   game_titles: GameTitle[];
@@ -146,6 +166,7 @@ export interface DbSnapshot {
   map_progress: MapProgress[];
   collectible_catalog: CollectibleCatalogItem[];
   collectible_copies: CollectibleCopy[];
+  teams: Team[];
 }
 
 export interface VersionHistoryEntry {
@@ -167,6 +188,7 @@ export const db = new Dexie('CoDexDatabase') as Dexie & {
   version_history: EntityTable<VersionHistoryEntry, 'id'>;
   collectible_catalog: EntityTable<CollectibleCatalogItem, 'catalog_id'>;
   collectible_copies: EntityTable<CollectibleCopy, 'copy_id'>;
+  teams: EntityTable<Team, 'team_id'>;
 };
 
 db.version(1).stores({
@@ -185,4 +207,8 @@ db.version(2).stores({
 db.version(3).stores({
   collectible_catalog: 'catalog_id, category, platform',
   collectible_copies: 'copy_id, catalog_id',
+});
+
+db.version(4).stores({
+  teams: 'team_id, created_date',
 });

@@ -1,13 +1,15 @@
 import { useState } from 'react';
+import { Teambuilder } from '../components/Teambuilder';
 import { DamageCalc } from '../components/DamageCalc';
 import { BreedingPlanner } from '../components/BreedingPlanner';
 import { IVChainPlanner } from '../components/IVChainPlanner';
 import { EggMoveTree } from '../components/EggMoveTree';
 import { MetaAnalytics } from '../components/MetaAnalytics';
 
-type Tab = 'calc' | 'breed' | 'ivplan' | 'eggmoves' | 'meta';
+type Tab = 'builder' | 'calc' | 'breed' | 'ivplan' | 'eggmoves' | 'meta';
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'builder', label: 'Builder' },
   { id: 'calc', label: 'Calculator' },
   { id: 'breed', label: 'Breeding' },
   { id: 'ivplan', label: 'IV Chain' },
@@ -16,13 +18,13 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 /**
- * Hosts the Damage Calculator, Breeding Planner sub-features, and Meta
- * Analytics under one bottom-nav tab (PRD Sections 8, 9) via an in-screen
- * sub-tab switcher, keeping this a two-tap flow rather than crowding the
- * primary nav (PRD 2.2).
+ * Hosts the Teambuilder, Damage Calculator, Breeding Planner sub-features,
+ * and Meta Analytics under one bottom-nav tab (PRD Sections 8, 9) via an
+ * in-screen sub-tab switcher, keeping this a two-tap flow rather than
+ * crowding the primary nav (PRD 2.2).
  */
 export function TeamScreen() {
-  const [tab, setTab] = useState<Tab>('calc');
+  const [tab, setTab] = useState<Tab>('builder');
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -44,6 +46,7 @@ export function TeamScreen() {
         ))}
       </div>
       <div className="flex-1 overflow-hidden">
+        {tab === 'builder' && <Teambuilder />}
         {tab === 'calc' && <DamageCalc />}
         {tab === 'breed' && <BreedingPlanner />}
         {tab === 'ivplan' && <IVChainPlanner />}

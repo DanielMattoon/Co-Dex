@@ -4,17 +4,35 @@ const RECENT_WINDOW_COUNT = 50;
 const RECENT_WINDOW_DAYS = 30;
 
 async function captureSnapshot(): Promise<DbSnapshot> {
-  const [game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies] =
-    await Promise.all([
-      db.game_titles.toArray(),
-      db.game_instances.toArray(),
-      db.trainer_profile.toArray(),
-      db.vault.toArray(),
-      db.map_progress.toArray(),
-      db.collectible_catalog.toArray(),
-      db.collectible_copies.toArray(),
-    ]);
-  return { game_titles, game_instances, trainer_profile, vault, map_progress, collectible_catalog, collectible_copies };
+  const [
+    game_titles,
+    game_instances,
+    trainer_profile,
+    vault,
+    map_progress,
+    collectible_catalog,
+    collectible_copies,
+    teams,
+  ] = await Promise.all([
+    db.game_titles.toArray(),
+    db.game_instances.toArray(),
+    db.trainer_profile.toArray(),
+    db.vault.toArray(),
+    db.map_progress.toArray(),
+    db.collectible_catalog.toArray(),
+    db.collectible_copies.toArray(),
+    db.teams.toArray(),
+  ]);
+  return {
+    game_titles,
+    game_instances,
+    trainer_profile,
+    vault,
+    map_progress,
+    collectible_catalog,
+    collectible_copies,
+    teams,
+  };
 }
 
 /**
@@ -97,6 +115,7 @@ export async function restoreSnapshot(id: number): Promise<void> {
       db.map_progress,
       db.collectible_catalog,
       db.collectible_copies,
+      db.teams,
     ],
     async () => {
       await Promise.all([
@@ -107,6 +126,7 @@ export async function restoreSnapshot(id: number): Promise<void> {
         db.map_progress.clear(),
         db.collectible_catalog.clear(),
         db.collectible_copies.clear(),
+        db.teams.clear(),
       ]);
       await Promise.all([
         db.game_titles.bulkAdd(snap.game_titles),
@@ -116,6 +136,7 @@ export async function restoreSnapshot(id: number): Promise<void> {
         db.map_progress.bulkAdd(snap.map_progress),
         db.collectible_catalog.bulkAdd(snap.collectible_catalog),
         db.collectible_copies.bulkAdd(snap.collectible_copies),
+        db.teams.bulkAdd(snap.teams),
       ]);
     },
   );
