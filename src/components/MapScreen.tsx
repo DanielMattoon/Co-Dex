@@ -4,10 +4,12 @@ import 'leaflet/dist/leaflet.css';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { SAMPLE_ROUTE, type EncounterZone, type MapMarker } from '../services/mapData';
+import { GAME_MAP_CONFIG } from '../services/mapLive';
 import { suggestCounters } from '../services/counterStrategy';
 import { canCatchOnRoute, registerCatch } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { LiveMapScreen } from './LiveMapScreen';
 
 const ZONE_COLOR: Record<EncounterZone['kind'], string> = {
   grass: '#22c55e',
@@ -34,7 +36,25 @@ const LAYER_LABELS: Record<LayerKind, string> = {
 
 type ActivePanel = { type: 'zone'; zone: EncounterZone } | { type: 'marker'; marker: MapMarker } | null;
 
+/**
+ * Picks between the real, live-data Map Guide (FireRed/Emerald/Platinum so
+ * far — whichever titles have an entry in GAME_MAP_CONFIG) and the original
+ * hand-typed sample route, kept as a fallback for every other title until
+ * this same model is extended to them.
+ */
 export function MapScreen() {
+  const { gameInstance } = useActiveGameInstance();
+  const gameTitle = useLiveQuery(
+    () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
+    [gameInstance],
+  );
+  const liveConfig = gameTitle ? GAME_MAP_CONFIG[gameTitle.game_title_id] : undefined;
+
+  if (liveConfig) return <LiveMapScreen config={liveConfig} />;
+  return <SampleMapScreen />;
+}
+
+function SampleMapScreen() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const zoneLayersRef = useRef<Map<string, L.Rectangle>>(new Map());

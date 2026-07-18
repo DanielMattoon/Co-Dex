@@ -26,7 +26,7 @@ function formatSpeciesName(rawName: string): string {
     .join('-');
 }
 
-async function cachedFetch<T>(url: string): Promise<T> {
+export async function cachedFetch<T>(url: string): Promise<T> {
   const cacheKey = `pokeapi_cache:${url}`;
   const stored = localStorage.getItem(cacheKey);
   if (stored) {
