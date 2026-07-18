@@ -22,6 +22,40 @@ export function getGeneration(pokemonId: number): number {
   return index === -1 ? GENERATION_RANGES.length : index + 1;
 }
 
+// --- Variant / form helpers (PRD 6.6's Variant Slide) ---
+
+const COSMETIC_VARIETY_PATTERN = /-(mega|gmax|totem|cap|starter|battle-bond|primal|eternamax|power-construct|cosplay|rock-star|belle|pop-star|phd|libre)\b/;
+
+/** Battle-only or cosmetic forms (Mega, Gmax, cap hats) aren't independently "caught" — never worth their own slide slot. */
+export function isCosmeticVariety(varietyName: string, baseName: string): boolean {
+  return varietyName !== baseName && COSMETIC_VARIETY_PATTERN.test(varietyName);
+}
+
+const REGIONAL_FORM_GENERATION: [string, number][] = [
+  ['-alola', 7],
+  ['-galar', 8],
+  ['-hisui', 8],
+  ['-paldea', 9],
+];
+
+/**
+ * A variant's own introduction generation. Same-generation forms (Shellos'
+ * sea forms, Unown's letters, Deoxys' formes) always match their base
+ * species' generation, so they need no special case — only later-added
+ * regional forms (Alolan/Galarian/Hisuian/Paldean) diverge from their base
+ * species' generation, detected here by PokeAPI's own naming convention.
+ * There's no per-form introduction date in PokeAPI's bulk data beyond this,
+ * so anything not matching a known regional suffix is assumed to date to
+ * its base species — accurate for every case except a handful of DLC-only
+ * forms this doesn't attempt to special-case.
+ */
+export function getVarietyGeneration(varietyName: string, baseGeneration: number): number {
+  for (const [suffix, gen] of REGIONAL_FORM_GENERATION) {
+    if (varietyName.includes(suffix)) return gen;
+  }
+  return baseGeneration;
+}
+
 // --- Box group labels (PRD 6.1 — "Custom names are always allowed") ---
 // Box grouping is now a purely visual chunking of the species grid (National/
 // Regional/Custom View), not a physical PC slot — but the label a user gives

@@ -11,6 +11,8 @@ export interface QuickCatchParams {
   nickname: string | null;
   ball: string | null;
   pokemonGoOrigin?: boolean;
+  gender?: 'male' | 'female' | 'genderless';
+  form?: string;
 }
 
 /**
@@ -22,7 +24,7 @@ export interface QuickCatchParams {
  * rather than wild encounters.
  */
 export async function quickCatch(params: QuickCatchParams): Promise<void> {
-  const { gameInstanceId, species, pokemonId, level, shiny, nickname, ball, pokemonGoOrigin = false } = params;
+  const { gameInstanceId, species, pokemonId, level, shiny, nickname, ball, pokemonGoOrigin = false, gender = 'genderless', form = 'default' } = params;
   await recordSnapshot('catch', `Caught ${species}${shiny ? ' (shiny)' : ''}`);
 
   await db.transaction('rw', db.vault, async () => {
@@ -36,9 +38,9 @@ export async function quickCatch(params: QuickCatchParams): Promise<void> {
       level,
       hp: 100,
       dead: false,
-      gender: 'genderless',
+      gender,
       shiny,
-      form: 'default',
+      form,
       catchLocation: null,
       origin_game_instance_id: gameInstanceId,
       current_game_instance_id: gameInstanceId,

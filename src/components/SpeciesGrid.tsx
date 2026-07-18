@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { Generations, toID } from '@smogon/calc';
-import type { GameTitle, VaultEntry } from '../db/schema';
-import { getSpriteUrl, getSpeciesFlags, getRegionalDex, listAllSpeciesWithIds, type SpeciesWithId } from '../services/pokeapi';
+import { HOME_GENERATION, type GameTitle, type VaultEntry } from '../db/schema';
+import {
+  getSpriteUrl,
+  getSpeciesFlags,
+  getSpeciesEggData,
+  getSpeciesVarietiesBulk,
+  getRegionalDex,
+  listAllSpeciesWithIds,
+  type SpeciesWithId,
+  type SpeciesVariety,
+} from '../services/pokeapi';
 import { getOriginBadgesForSpecies, type OriginBadge } from '../services/originBadges';
 import { bulkAddTag, bulkDelete, bulkToggleFainted, bulkToggleShiny } from '../services/bulkEdit';
 import { quickCatch } from '../services/quickCatch';
@@ -9,6 +18,8 @@ import {
   deleteCustomBoxGroup,
   getBoxLabels,
   getGeneration,
+  getVarietyGeneration,
+  isCosmeticVariety,
   moveCustomBoxGroup,
   moveInCustomOrder,
   setBoxLabel,
@@ -53,6 +64,16 @@ function speciesType(name: string): string[] {
   return GEN.species.get(toID(name))?.types ?? [];
 }
 
+function formVarietyLabel(variety: SpeciesVariety, baseName: string): string {
+  if (variety.name === baseName || variety.isDefault) return 'Default';
+  const suffix = variety.name.startsWith(baseName) ? variety.name.slice(baseName.length) : variety.name;
+  return suffix
+    .replace(/^-/, '')
+    .split('-')
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
+
 function dexRangeLabel(tiles: (Tile | null)[]): string | null {
   const nums = tiles.filter((t): t is Tile => t !== null).map((t) => t.regionalNumber ?? t.pokemonId);
   if (nums.length === 0) return null;
@@ -91,6 +112,9 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [rareSpecies, setRareSpecies] = useState<Set<string>>(new Set());
   const [badges, setBadges] = useState<Map<number, OriginBadge[]>>(new Map());
   const [boxLabels, setBoxLabels] = useState<Map<number, string>>(new Map());
+  const [varietiesByPokemonId, setVarietiesByPokemonId] = useState<Map<number, SpeciesVariety[]>>(new Map());
+  const [genderView, setGenderView] = useState(false);
+  const [genderRateByPokemonId, setGenderRateByPokemonId] = useState<Map<number, number>>(new Map());
 
   const [shinyOnly, setShinyOnly] = useState(false);
   const [rareOnly, setRareOnly] = useState(false);
@@ -173,6 +197,36 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     return map;
   }, [entries]);
 
+  // A tile's "relevant" varieties: every form sharing its Dex number that
+  // isn't a battle-only cosmetic form (Mega/Gmax) and already existed by
+  // the active game's generation. A single-length result means "no slide" —
+  // most species only have one variety (themselves) to begin with.
+  function relevantVarieties(tile: Tile): SpeciesVariety[] {
+    const all = varietiesByPokemonId.get(tile.pokemonId) ?? [];
+    if (all.length <= 1) return all;
+    const baseGen = getGeneration(tile.pokemonId);
+    const cap = gameTitle && gameTitle.generation !== HOME_GENERATION ? gameTitle.generation : Infinity;
+    return all.filter((v) => !isCosmeticVariety(v.name, tile.name) && getVarietyGeneration(v.name, baseGen) <= cap);
+  }
+
+  // Ownership aggregated up to the tile (Dex-number) level: a tile with
+  // multiple relevant forms is "owned" if ANY of its forms are, and its ×N
+  // badge counts specimens across every form — the Variant Slide and the
+  // duplicate-specimen count are the same mechanism (PRD 6.6).
+  const { ownedByTile, variantsByTile } = useMemo(() => {
+    const owned = new Map<number, VaultEntry[]>();
+    const variants = new Map<number, SpeciesVariety[]>();
+    for (const t of baseTiles) {
+      const vs = relevantVarieties(t);
+      variants.set(t.pokemonId, vs);
+      const ids = vs.length > 1 ? vs.map((v) => v.pokemonId) : [t.pokemonId];
+      const list = ids.flatMap((id) => ownedByPokemonId.get(id) ?? []);
+      if (list.length > 0) owned.set(t.pokemonId, list);
+    }
+    return { ownedByTile: owned, variantsByTile: variants };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseTiles, varietiesByPokemonId, ownedByPokemonId, gameTitle]);
+
   const reservedTargetSpecies = useMemo(() => {
     const set = new Set<string>();
     for (const e of entries) {
@@ -188,6 +242,24 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     if (ids.length === 0) return;
     getOriginBadgesForSpecies(ids, gameInstanceId).then(setBadges);
   }, [baseTiles, gameInstanceId]);
+
+  // Variant Slide (PRD 6.6) — which forms share each tile's National Dex
+  // number. Fetched once per species (concurrency-capped, cached forever
+  // afterward) for whatever's currently visible, so switching games/views
+  // only pays this cost the first time a given species set is seen.
+  useEffect(() => {
+    let cancelled = false;
+    if (baseTiles.length === 0) return;
+    getSpeciesVarietiesBulk(baseTiles.map((t) => t.name)).then((byName) => {
+      if (cancelled) return;
+      const map = new Map<number, SpeciesVariety[]>();
+      for (const t of baseTiles) map.set(t.pokemonId, byName.get(t.name) ?? []);
+      setVarietiesByPokemonId(map);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseTiles]);
 
   // Custom View is the sandbox: it always shows the true, unfiltered order
   // (filters are hidden while active) so box-group boundaries here always
@@ -226,7 +298,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     }
 
     return list.filter((t) => {
-      const owned = ownedByPokemonId.get(t.pokemonId) ?? [];
+      const owned = ownedByTile.get(t.pokemonId) ?? [];
       const isOwned = owned.length > 0;
       if (hideCaught && isOwned) return false;
       if (shinyOnly && !owned.some((o) => o.shiny)) return false;
@@ -237,7 +309,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       if (matchingPokemonIds && !matchingPokemonIds.has(t.pokemonId)) return false;
       return true;
     });
-  }, [baseTiles, viewMode, isCustom, entries, ownedByPokemonId, hideCaught, shinyOnly, rareOnly, rareSpecies, flaggedOnly, anomalousOnly, typeFilter, matchingPokemonIds]);
+  }, [baseTiles, viewMode, isCustom, entries, ownedByTile, hideCaught, shinyOnly, rareOnly, rareSpecies, flaggedOnly, anomalousOnly, typeFilter, matchingPokemonIds]);
 
   // --- Box-group chunking (National/Regional/Custom) ---
   const boxGroups: BoxGroup[] = useMemo(() => {
@@ -341,6 +413,20 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     });
   }
 
+  async function catchVariant(variety: SpeciesVariety, gender: 'male' | 'female' | null) {
+    await quickCatch({
+      gameInstanceId,
+      species: titleCase(variety.name),
+      pokemonId: variety.pokemonId,
+      level: 5,
+      shiny: false,
+      nickname: null,
+      ball: null,
+      gender: gender ?? 'genderless',
+      form: variety.name,
+    });
+  }
+
   function handleTileClick(tile: Tile, e: ReactMouseEvent) {
     const owned = ownedByPokemonId.get(tile.pokemonId) ?? [];
     if (e.shiftKey && owned.length > 0) {
@@ -370,6 +456,18 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setSelectedUuid(null);
     setDrawerExpanded(false);
   }
+
+  // Gender View (PRD 6.6) — fetched lazily per opened tile rather than for
+  // the whole visible grid, since the M/F split only matters at the point
+  // a catch decision is actually being made.
+  useEffect(() => {
+    if (expandedPokemonId === null || genderRateByPokemonId.has(expandedPokemonId)) return;
+    const tile = tiles.find((t) => t.pokemonId === expandedPokemonId) ?? baseTiles.find((t) => t.pokemonId === expandedPokemonId);
+    if (!tile) return;
+    getSpeciesEggData(tile.name)
+      .then((d) => setGenderRateByPokemonId((prev) => new Map(prev).set(expandedPokemonId, d.genderRate)))
+      .catch(() => {});
+  }, [expandedPokemonId, tiles, baseTiles, genderRateByPokemonId]);
 
   const selectedSpecimenIds = useMemo(() => entries.filter((en) => multiSelected.has(en.pokemon_id)).map((en) => en.uuid), [entries, multiSelected]);
 
@@ -447,8 +545,54 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const selected = entries.find((e) => e.uuid === selectedUuid) ?? null;
   const drawerOpen = expandedPokemonId !== null;
 
+  // Forms (Variant Slide) + duplicates + Gender View are unified into one
+  // drawer: each "bucket" below is a catchable slot (a form, optionally
+  // split by gender) that shows either its owned specimens or a single
+  // greyed catch placeholder — the same mechanism whether the slide is
+  // revealing a form choice or just a pile of duplicates.
+  const expandedVarieties: SpeciesVariety[] =
+    expandedTile !== undefined
+      ? (() => {
+          const vs = variantsByTile.get(expandedTile.pokemonId) ?? [];
+          return vs.length > 0 ? vs : [{ name: expandedTile.name, pokemonId: expandedTile.pokemonId, isDefault: true }];
+        })()
+      : [];
+  const expandedGenderRate = expandedPokemonId !== null ? genderRateByPokemonId.get(expandedPokemonId) : undefined;
+  const showGenderSplit = genderView && expandedGenderRate !== undefined && expandedGenderRate >= 1 && expandedGenderRate <= 7;
+  const hasFormsOrGenderSplit = expandedVarieties.length > 1 || showGenderSplit;
+
+  interface DrawerBucket {
+    key: string;
+    variety: SpeciesVariety;
+    label: string;
+    gender: 'male' | 'female' | null;
+    entries: VaultEntry[];
+  }
+
+  const drawerBuckets: DrawerBucket[] = !expandedTile
+    ? []
+    : expandedVarieties.flatMap((v) => {
+        const formLabel = formVarietyLabel(v, expandedTile.name);
+        const varietyEntries = ownedByPokemonId.get(v.pokemonId) ?? [];
+        if (!showGenderSplit) {
+          return [{ key: `${v.pokemonId}`, variety: v, label: formLabel, gender: null, entries: varietyEntries }];
+        }
+        const buckets: DrawerBucket[] = (['male', 'female'] as const).map((g) => ({
+          key: `${v.pokemonId}-${g}`,
+          variety: v,
+          label: expandedVarieties.length > 1 ? `${formLabel} — ${g === 'male' ? 'Male' : 'Female'}` : g === 'male' ? 'Male' : 'Female',
+          gender: g,
+          entries: varietyEntries.filter((e) => e.gender === g),
+        }));
+        const ungendered = varietyEntries.filter((e) => e.gender === 'genderless');
+        if (ungendered.length > 0) {
+          buckets.push({ key: `${v.pokemonId}-u`, variety: v, label: `${formLabel} — Ungendered`, gender: null, entries: ungendered });
+        }
+        return buckets;
+      });
+
   function renderTile(tile: Tile) {
-    const owned = ownedByPokemonId.get(tile.pokemonId) ?? [];
+    const owned = ownedByTile.get(tile.pokemonId) ?? [];
     const isOwned = owned.length > 0;
     const isShiny = owned.some((o) => o.shiny);
     const isAnomalous = owned.some((o) => o.is_sandbox_anomalous);
@@ -456,6 +600,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const isMultiSelected = multiSelected.has(tile.pokemonId);
     const isReservedTarget = reservedTargetSpecies.has(toID(tile.name));
     const isLocked = owned.some((o) => o.breeding_project_lock?.is_locked);
+    const hasVariants = (variantsByTile.get(tile.pokemonId) ?? []).length > 1;
 
     return (
       <div
@@ -493,6 +638,11 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
         />
         <span className="truncate text-[8px] text-slate-500">#{tile.regionalNumber ?? tile.pokemonId}</span>
         {owned.length > 1 && <span className="absolute bottom-0.5 right-0.5 rounded-full bg-slate-950/80 px-1 text-[8px] text-cyan-300">×{owned.length}</span>}
+        {hasVariants && (
+          <span className="absolute left-0.5 top-0.5 flex h-3 w-3 items-center justify-center rounded-sm bg-slate-950/80 text-[8px] leading-none text-violet-300" title="Multiple forms — open details to slide through them">
+            ⋮⋮
+          </span>
+        )}
         {tileBadges.length > 0 && (
           <span className="absolute bottom-0.5 left-0.5 flex gap-0.5" title={tileBadges.map((b) => b.gameTitleName).join(', ')}>
             {tileBadges.slice(0, 3).map((b, i) => (
@@ -559,6 +709,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                       Separate Box
                     </button>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setGenderView((v) => !v)}
+                    title="Splits a tile's details into Male/Female catch options wherever a species can be either — opens per-tile via the detail button."
+                    className={['rounded border px-2 py-0.5 text-[10px]', genderView ? 'border-pink-400/60 bg-pink-500/20 text-pink-300' : 'border-slate-700 text-slate-400'].join(' ')}
+                  >
+                    Gender View
+                  </button>
                 </div>
                 {isCustom && <p className="mt-2 text-slate-500">Custom View is your sandbox — full reorder/rename/delete on box groups.</p>}
               </div>
@@ -787,6 +945,50 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           <div className="flex-1 overflow-y-auto p-2">
             {selected ? (
               <InfoPanel entry={selected} nuzlocke={nuzlocke} onClose={() => setSelectedUuid(null)} />
+            ) : hasFormsOrGenderSplit ? (
+              <div className="flex flex-col gap-2.5">
+                {drawerBuckets.map((b) => (
+                  <div key={b.key}>
+                    <p className="mb-1 text-slate-500">{b.label}</p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {b.entries.length > 0 ? (
+                        b.entries.map((e) => (
+                          <li key={e.uuid}>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedUuid(e.uuid)}
+                              className="flex flex-col items-center rounded border border-slate-700 bg-slate-900/50 p-1 hover:border-slate-500"
+                            >
+                              <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
+                              <span className="text-[8px] text-slate-400">
+                                {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
+                                {e.is_sandbox_anomalous && <span className="text-red-400"> ⚠</span>}
+                              </span>
+                            </button>
+                          </li>
+                        ))
+                      ) : (
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => void catchVariant(b.variety, b.gender)}
+                            title={`Catch ${b.label}`}
+                            className="flex flex-col items-center rounded border border-dashed border-slate-700 bg-slate-900/30 p-1 opacity-60 hover:border-cyan-400 hover:opacity-100"
+                          >
+                            <img
+                              src={getSpriteUrl(b.variety.pokemonId)}
+                              alt={b.label}
+                              className="h-10 w-10 opacity-40 grayscale"
+                              style={{ imageRendering: 'pixelated' }}
+                            />
+                            <span className="text-[8px] text-slate-500">Catch</span>
+                          </button>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+              </div>
             ) : expandedSpecies.length > 0 ? (
               <ul className="flex flex-wrap gap-1.5">
                 {expandedSpecies.map((e) => (

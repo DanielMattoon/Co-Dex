@@ -80,6 +80,57 @@ export async function getSpeciesEggData(name: string): Promise<SpeciesEggData> {
   };
 }
 
+// --- Variant / form data (PRD 6.6's Variant Slide) ---
+// PokeAPI groups every form that shares one National Dex number under a
+// single species' `varieties` list — Shellos East/West Sea, Unown's 28
+// letters, Deoxys' formes, regional forms, etc. Species with genuinely
+// distinct Dex numbers (Nidoran-F vs Nidoran-M) never appear together here,
+// since each has its own separate /pokemon-species entry.
+
+export interface SpeciesVariety {
+  name: string;
+  pokemonId: number;
+  isDefault: boolean;
+}
+
+interface RawSpeciesVarietiesResponse {
+  varieties: { is_default: boolean; pokemon: { name: string; url: string } }[];
+}
+
+export async function getSpeciesVarieties(name: string): Promise<SpeciesVariety[]> {
+  const data = await cachedFetch<RawSpeciesVarietiesResponse>(`${BASE}/pokemon-species/${toId(name)}`);
+  return data.varieties.map((v) => {
+    const id = Number(v.pokemon.url.replace(/\/$/, '').split('/').pop());
+    return { name: v.pokemon.name, pokemonId: id, isDefault: v.is_default };
+  });
+}
+
+/**
+ * Fetches varieties for many species at once, capped to a small concurrency
+ * so a big dex (Pokémon HOME's full ~1025 species) doesn't fire a flat
+ * thousand-request burst at PokeAPI simultaneously. Every result is cached
+ * to localStorage forever afterward (same cachedFetch as everything else in
+ * this file), so this cost is paid once per species, ever.
+ */
+export async function getSpeciesVarietiesBulk(speciesNames: string[]): Promise<Map<string, SpeciesVariety[]>> {
+  const unique = [...new Set(speciesNames)];
+  const map = new Map<string, SpeciesVariety[]>();
+  let index = 0;
+  async function worker() {
+    while (index < unique.length) {
+      const i = index++;
+      const name = unique[i];
+      try {
+        map.set(name, await getSpeciesVarieties(name));
+      } catch {
+        map.set(name, []);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(10, unique.length) }, worker));
+  return map;
+}
+
 export async function listAllSpeciesNames(): Promise<string[]> {
   const data = await cachedFetch<RawSpeciesListResponse>(`${BASE}/pokemon-species?limit=2000`);
   return data.results.map((r) => r.name);

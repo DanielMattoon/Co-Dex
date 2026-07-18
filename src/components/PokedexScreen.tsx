@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { getSpriteUrl, listAllSpeciesWithIds, type SpeciesWithId } from '../services/pokeapi';
+import { getGeneration } from '../services/boxes';
+import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { db, HOME_GENERATION } from '../db/schema';
 import { SpeciesReference } from './SpeciesReference';
 
 interface PokedexScreenProps {
@@ -11,17 +15,30 @@ interface PokedexScreenProps {
  * dex. No UUIDs, no checkboxes: just caught/uncaught at a glance across the
  * whole National Dex for the active save, independent of box placement.
  * Selecting an entry reuses SpeciesReference, the same reference layer the
- * Info Panel shows for owned specimens.
+ * Info Panel shows for owned specimens. Scoped to the active game's
+ * generation, same as the Living Dex's National View — a Gen 3 game's
+ * static reference shouldn't list Pokémon that don't exist yet either.
  */
 export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
-  const [species, setSpecies] = useState<SpeciesWithId[]>([]);
+  const [allSpecies, setAllSpecies] = useState<SpeciesWithId[]>([]);
   const [hideCaught, setHideCaught] = useState(false);
   const [selected, setSelected] = useState<SpeciesWithId | null>(null);
   const [query, setQuery] = useState('');
 
+  const { gameInstance } = useActiveGameInstance();
+  const gameTitle = useLiveQuery(
+    () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
+    [gameInstance],
+  );
+
   useEffect(() => {
-    listAllSpeciesWithIds().then(setSpecies);
+    listAllSpeciesWithIds().then(setAllSpecies);
   }, []);
+
+  const species =
+    gameTitle && gameTitle.generation !== HOME_GENERATION
+      ? allSpecies.filter((s) => getGeneration(s.pokemonId) <= gameTitle.generation)
+      : allSpecies;
 
   const visible = species
     .filter((s) => !hideCaught || !caughtPokemonIds.has(s.pokemonId))
