@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Generations, toID } from '@smogon/calc';
-import { db, type VaultEntry } from '../db/schema';
+import { db, HOME_GENERATION, type VaultEntry } from '../db/schema';
 import {
   getSpriteUrl,
   getEvolutionChain,
+  getItemGenerationBulk,
   getLevelUpMoves,
   listAllItemNames,
   type EvolutionChainData,
@@ -15,8 +16,6 @@ import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
 import { checkTransferLegality, executeTransfer, type LegalityCheck } from '../services/transfer';
 import { listKnownRoutes } from '../services/mapData';
-import { quickCatch } from '../services/quickCatch';
-import { bulkDelete } from '../services/bulkEdit';
 import { StatBar } from './StatBar';
 import { SpeciesPicker } from './SpeciesPicker';
 
@@ -60,63 +59,24 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   const [catchLocationDraft, setCatchLocationDraft] = useState(entry.catchLocation ?? '');
   const knownRoutes = listKnownRoutes();
   const [itemNames, setItemNames] = useState<string[]>([]);
+  const [itemGenerationByName, setItemGenerationByName] = useState<Map<string, number>>(new Map());
+
+  const gameInstance = useLiveQuery(() => db.game_instances.get(entry.current_game_instance_id), [entry.current_game_instance_id]);
+  const entryGameTitle = useLiveQuery(() => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined), [gameInstance]);
 
   useEffect(() => {
     listAllItemNames().then(setItemNames).catch(() => setItemNames([]));
   }, []);
 
-  // Same species/form/gender, in this same save — the pool the +/- stepper
-  // increments/decrements, mirroring the Living Dex tile's own +/- control.
-  const duplicates = useLiveQuery(
-    () =>
-      db.vault
-        .where('current_game_instance_id')
-        .equals(entry.current_game_instance_id)
-        .and((e) => e.pokemon_id === entry.pokemon_id && e.form === entry.form && e.gender === entry.gender)
-        .toArray(),
-    [entry.current_game_instance_id, entry.pokemon_id, entry.form, entry.gender],
-  ) ?? [entry];
+  useEffect(() => {
+    if (itemNames.length === 0) return;
+    getItemGenerationBulk(itemNames).then(setItemGenerationByName);
+  }, [itemNames]);
 
-  const [confirmingRemove, setConfirmingRemove] = useState(false);
-
-  async function addDuplicate() {
-    await quickCatch({
-      gameInstanceId: entry.current_game_instance_id,
-      species: entry.species,
-      pokemonId: entry.pokemon_id,
-      level: 5,
-      shiny: false,
-      nickname: null,
-      ball: null,
-      gender: entry.gender,
-      form: entry.form,
-    });
-  }
-
-  function removeDuplicateReasons(e: VaultEntry): string[] {
-    const reasons: string[] = [];
-    if (e.nickname) reasons.push('a nickname');
-    if (e.level !== 5) reasons.push(`level ${e.level}`);
-    if (e.moves.length > 0) reasons.push('moves');
-    if (e.held_item) reasons.push('a held item');
-    if (e.tags.length > 0) reasons.push('tags');
-    if (e.shiny) reasons.push('shiny status');
-    if (e.reservation_status.is_reserved) reasons.push('an evolution reservation');
-    return reasons;
-  }
-
-  async function removeThisSpecimen() {
-    await bulkDelete([entry.uuid]);
-    onClose();
-  }
-
-  function handleMinusClick() {
-    if (removeDuplicateReasons(entry).length === 0) {
-      void removeThisSpecimen();
-    } else {
-      setConfirmingRemove(true);
-    }
-  }
+  const inGameItemNames = useMemo(() => {
+    if (!entryGameTitle || entryGameTitle.generation === HOME_GENERATION) return itemNames;
+    return itemNames.filter((n) => (itemGenerationByName.get(n) ?? 1) <= entryGameTitle.generation);
+  }, [itemNames, itemGenerationByName, entryGameTitle]);
 
   const instances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
   const titles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
@@ -260,44 +220,11 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
             {entry.species} {entry.shiny && <span className="text-amber-300">★</span>}
           </p>
           <p className="text-slate-500">Lv. {entry.level}</p>
-          <div className="mt-1 flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleMinusClick}
-              title="Remove one (this specimen)"
-              className="flex h-5 w-5 items-center justify-center rounded border border-red-700/60 text-red-300 hover:bg-red-900/40"
-            >
-              −
-            </button>
-            <span className="text-slate-400">{duplicates.length} owned</span>
-            <button
-              type="button"
-              onClick={() => void addDuplicate()}
-              title="Add another duplicate"
-              className="flex h-5 w-5 items-center justify-center rounded border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/40"
-            >
-              +
-            </button>
-          </div>
         </div>
         <button type="button" onClick={onClose} className="ml-auto self-start text-[10px] text-slate-400 hover:text-slate-200">
           close
         </button>
       </div>
-
-      {confirmingRemove && (
-        <div className="mb-2 rounded border border-red-900/50 bg-red-950/30 p-2 text-red-300">
-          <p className="mb-2">Remove this {entry.species}? It has {removeDuplicateReasons(entry).join(', ')} — this can be undone from Version History.</p>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => void removeThisSpecimen()} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 hover:bg-red-500/30">
-              Remove
-            </button>
-            <button type="button" onClick={() => setConfirmingRemove(false)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {entry.is_sandbox_anomalous && (
         <div className="warning-pulse mb-2 rounded border border-red-500 bg-red-950/40 p-2 text-red-300">
@@ -398,7 +325,7 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
               instanceId={`held-item-${entry.uuid}`}
               value={heldItem}
               onChange={setHeldItem}
-              options={itemNames}
+              options={inGameItemNames}
               placeholder="(none)"
             />
           </div>

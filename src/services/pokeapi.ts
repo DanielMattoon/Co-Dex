@@ -91,6 +91,10 @@ export interface SpeciesVariety {
   name: string;
   pokemonId: number;
   isDefault: boolean;
+  /** Label straight from PokeAPI's form_name, when this entry came from the `forms` layer rather than `varieties`. */
+  label?: string;
+  /** Pre-resolved sprite for form-layer entries (Unown's letters, cosmetic costumes) — their numeric IDs (pokemon-form IDs) are NOT valid sprite/pokemon IDs and would show the wrong species if passed to getSpriteUrl. */
+  spriteUrl?: string;
 }
 
 /** Varieties + gender rate come off the same /pokemon-species response, so both are fetched together — one request per species instead of two. */
@@ -104,15 +108,56 @@ interface RawSpeciesFormResponse {
   gender_rate: number;
 }
 
+interface RawPokemonFormsResponse {
+  forms: { name: string; url: string }[];
+}
+
+interface RawPokemonFormResponse {
+  name: string;
+  form_name: string;
+  is_default: boolean;
+  sprites: { front_default: string | null };
+}
+
+/**
+ * PokeAPI splits "different forms of a species" across two layers: a
+ * distinct `variety` (its own /pokemon/ entry — Deoxys' formes, regional
+ * forms) or a `form` under ONE variety's /pokemon/ entry (Unown's 28
+ * letters, Pikachu's cosplay/cap costumes) — a species with exactly one
+ * variety can still have many forms, which the Variant Slide would
+ * otherwise miss entirely (Unown showed no slide at all before this).
+ */
+async function getFormLayerVarieties(defaultVarietyName: string, baseDexId: number): Promise<SpeciesVariety[] | null> {
+  const pokemonData = await cachedFetch<RawPokemonFormsResponse>(`${BASE}/pokemon/${toId(defaultVarietyName)}`);
+  if (pokemonData.forms.length <= 1) return null;
+  const forms = await Promise.all(pokemonData.forms.map((f) => cachedFetch<RawPokemonFormResponse>(f.url)));
+  return forms.map((f) => ({
+    name: f.name,
+    pokemonId: baseDexId,
+    isDefault: f.is_default,
+    label: f.form_name || undefined,
+    spriteUrl: f.sprites.front_default ?? undefined,
+  }));
+}
+
 export async function getSpeciesFormData(name: string): Promise<SpeciesFormData> {
   const data = await cachedFetch<RawSpeciesFormResponse>(`${BASE}/pokemon-species/${toId(name)}`);
-  return {
-    genderRate: data.gender_rate,
-    varieties: data.varieties.map((v) => {
-      const id = Number(v.pokemon.url.replace(/\/$/, '').split('/').pop());
-      return { name: v.pokemon.name, pokemonId: id, isDefault: v.is_default };
-    }),
-  };
+  const varietyEntries = data.varieties.map((v) => {
+    const id = Number(v.pokemon.url.replace(/\/$/, '').split('/').pop());
+    return { name: v.pokemon.name, pokemonId: id, isDefault: v.is_default };
+  });
+
+  let varieties = varietyEntries;
+  if (varietyEntries.length === 1) {
+    try {
+      const formLayer = await getFormLayerVarieties(varietyEntries[0].name, varietyEntries[0].pokemonId);
+      if (formLayer) varieties = formLayer;
+    } catch {
+      // Forms fetch failed — fall back to the single default variety, no slide.
+    }
+  }
+
+  return { genderRate: data.gender_rate, varieties };
 }
 
 /**
@@ -244,6 +289,7 @@ export interface ItemDetail {
   attributes: string[];
   /** Species known to hold this item in the wild, per PokeAPI's held_by_pokemon. */
   heldByPokemon: string[];
+  generation: number;
 }
 
 interface RawItemListResponse {
@@ -259,11 +305,33 @@ interface RawItemResponse {
   attributes: { name: string }[];
   effect_entries: { short_effect: string; language: { name: string } }[];
   held_by_pokemon: { pokemon: { name: string } }[];
+  game_indices: { generation: { url: string } }[];
 }
 
 export async function listAllItemNames(): Promise<string[]> {
   const data = await cachedFetch<RawItemListResponse>(`${BASE}/item?limit=2000`);
   return data.results.map((r) => r.name);
+}
+
+function generationNumberFromUrl(url: string): number {
+  const match = url.match(/\/generation\/(\d+)\/?$/);
+  return match ? Number(match[1]) : 1;
+}
+
+/**
+ * An item's introduction generation, from its own game_indices — but that
+ * data only reliably starts at Generation III (verified: ordinary items
+ * that have existed since Gen 1, like Potion, have no recorded Gen 1/2
+ * game_indices at all; genuinely modern items like Mega Stones correctly
+ * report their real generation, e.g. Venusaurite → VI). Treating "earliest
+ * recorded generation 3" as "always existed" avoids falsely gating basic
+ * items out of Gen 1/2 titles while still catching real generation-locked
+ * items correctly.
+ */
+function estimateItemGeneration(gameIndices: { generation: { url: string } }[]): number {
+  if (gameIndices.length === 0) return 1;
+  const min = Math.min(...gameIndices.map((g) => generationNumberFromUrl(g.generation.url)));
+  return min <= 3 ? 1 : min;
 }
 
 export async function getItemDetail(name: string): Promise<ItemDetail> {
@@ -278,7 +346,28 @@ export async function getItemDetail(name: string): Promise<ItemDetail> {
     flingEffect: data.fling_effect?.name ?? null,
     attributes: data.attributes.map((a) => a.name),
     heldByPokemon: data.held_by_pokemon.map((h) => h.pokemon.name),
+    generation: estimateItemGeneration(data.game_indices),
   };
+}
+
+/** Concurrency-capped generation lookup for many items at once (Item Dex/held-item picker generation scoping) — cached forever per item afterward. */
+export async function getItemGenerationBulk(names: string[]): Promise<Map<string, number>> {
+  const unique = [...new Set(names)];
+  const map = new Map<string, number>();
+  let index = 0;
+  async function worker() {
+    while (index < unique.length) {
+      const i = index++;
+      const name = unique[i];
+      try {
+        map.set(name, (await getItemDetail(name)).generation);
+      } catch {
+        map.set(name, 1);
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(20, unique.length) }, worker));
+  return map;
 }
 
 // --- Egg Move Inheritance Tree (PRD 8.4) ---

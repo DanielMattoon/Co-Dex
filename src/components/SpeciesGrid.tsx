@@ -70,6 +70,7 @@ function speciesType(name: string): string[] {
 }
 
 function formVarietyLabel(variety: SpeciesVariety, baseName: string): string {
+  if (variety.label) return variety.label.charAt(0).toUpperCase() + variety.label.slice(1);
   if (variety.name === baseName || variety.isDefault) return 'Default';
   const suffix = variety.name.startsWith(baseName) ? variety.name.slice(baseName.length) : variety.name;
   return suffix
@@ -77,6 +78,12 @@ function formVarietyLabel(variety: SpeciesVariety, baseName: string): string {
     .split('-')
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(' ');
+}
+
+/** Sprite for a physical tile — form-layer entries (Unown's letters, cosmetic costumes) carry a pre-resolved sprite URL since their numeric IDs aren't valid pokemon/sprite IDs. */
+function tileSpriteUrl(pokemonId: number, variety: SpeciesVariety | undefined, shiny: boolean): string {
+  if (variety?.spriteUrl && !shiny) return variety.spriteUrl;
+  return getSpriteUrl(pokemonId, shiny);
 }
 
 function dexRangeLabel(tiles: (Tile | null)[]): string | null {
@@ -159,6 +166,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
 
   const [expandedPokemonId, setExpandedPokemonId] = useState<number | null>(null);
   const [expandedGender, setExpandedGender] = useState<'male' | 'female' | null>(null);
+  const [expandedVarietyName, setExpandedVarietyName] = useState<string | null>(null);
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [drawerExpanded, setDrawerExpanded] = useState(false);
 
@@ -253,10 +261,26 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseTiles, varietiesByPokemonId, gameTitle]);
 
-  /** Ownership for exactly the physical tile shown (its slid-open form, and gender if this is a split tile). An untagged catch (still 'genderless') surfaces on BOTH gendered tiles rather than silently disappearing. */
+  /**
+   * Ownership for exactly the physical tile shown. A slid-open sub-tile
+   * (Unown's letters, Pikachu's cosplay forms) shares its Dex-number's
+   * pokemon_id with every OTHER form of that same species — the `form`
+   * field is what actually tells them apart, so it's filtered on whenever
+   * a specific variety/form is being shown. The collapsed tile aggregates
+   * across every relevant form sharing this Dex number (Deoxys collapsed
+   * shows "owned" if ANY of its formes are). Gender is checked last; an
+   * untagged catch (still 'genderless') surfaces on BOTH gendered tiles
+   * rather than silently disappearing.
+   */
   function ownedForTile(tile: Tile): VaultEntry[] {
-    const displayId = tile.variety?.pokemonId ?? tile.pokemonId;
-    const list = ownedByPokemonId.get(displayId) ?? [];
+    let list: VaultEntry[];
+    if (tile.variety) {
+      list = (ownedByPokemonId.get(tile.variety.pokemonId) ?? []).filter((e) => e.form === tile.variety!.name);
+    } else {
+      const varieties = variantsByTile.get(tile.pokemonId) ?? [];
+      const ids = varieties.length > 1 ? [...new Set(varieties.map((v) => v.pokemonId))] : [tile.pokemonId];
+      list = ids.flatMap((id) => ownedByPokemonId.get(id) ?? []);
+    }
     return tile.gender ? list.filter((e) => e.gender === tile.gender || e.gender === 'genderless') : list;
   }
 
@@ -598,11 +622,42 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setSelectedUuid(null);
     setExpandedPokemonId(tile.variety?.pokemonId ?? tile.pokemonId);
     setExpandedGender(tile.gender ?? null);
+    // A form-layer variety (Unown's letters, cosplay costumes) shares its
+    // Dex-number pokemon_id with every sibling form, so the drawer needs the
+    // form name too, not just the id, to show only THIS form's specimens.
+    setExpandedVarietyName(tile.variety && !tile.variety.isDefault ? tile.variety.name : null);
+  }
+
+  // The "select a duplicate" page (not the ID page for one specific
+  // specimen) is where add/remove duplicate controls live.
+  async function catchAnotherInDrawer(name: string | undefined) {
+    if (expandedPokemonId === null || !name) return;
+    await quickCatch({
+      gameInstanceId,
+      species: titleCase(name),
+      pokemonId: expandedPokemonId,
+      level: 5,
+      shiny: false,
+      nickname: null,
+      ball: null,
+      gender: expandedGender ?? 'genderless',
+      form: expandedVarietyName ?? 'default',
+    });
+  }
+
+  function handleRemoveDrawerSpecimen(entry: VaultEntry) {
+    const reasons = specimenRealDataReasons(entry);
+    if (reasons.length === 0) {
+      void bulkDelete([entry.uuid]);
+    } else {
+      setConfirmingRelease({ uuid: entry.uuid, species: entry.species, reasons });
+    }
   }
 
   function closeDrawer() {
     setExpandedPokemonId(null);
     setExpandedGender(null);
+    setExpandedVarietyName(null);
     setSelectedUuid(null);
     setDrawerExpanded(false);
   }
@@ -725,7 +780,9 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       : undefined;
   const expandedSpecies =
     expandedPokemonId !== null
-      ? (ownedByPokemonId.get(expandedPokemonId) ?? []).filter((e) => !expandedGender || e.gender === expandedGender)
+      ? (ownedByPokemonId.get(expandedPokemonId) ?? [])
+          .filter((e) => !expandedGender || e.gender === expandedGender)
+          .filter((e) => !expandedVarietyName || e.form === expandedVarietyName)
       : [];
   const selected = entries.find((e) => e.uuid === selectedUuid) ?? null;
   const drawerOpen = expandedPokemonId !== null;
@@ -746,7 +803,10 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const isMultiSelected = multiSelected.has(tile.pokemonId);
     const isReservedTarget = reservedTargetSpecies.has(toID(tile.name));
     const isLocked = owned.some((o) => o.breeding_project_lock?.is_locked);
-    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.pokemonId ?? 'd'}`;
+    // variety.name (not pokemonId) is what's guaranteed unique here — every
+    // form-layer entry (Unown's 28 letters) shares one base pokemonId, so
+    // keying on pokemonId collided every one of them into the same React key.
+    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.name ?? 'd'}`;
     const genderMark = tile.gender ? (tile.gender === 'male' ? ' ♂' : ' ♀') : '';
     const formMark = tile.variety ? ` (${formVarietyLabel(tile.variety, tile.name)})` : '';
 
@@ -771,20 +831,21 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           isMultiSelected
             ? 'border-amber-400 bg-amber-500/10'
             : expandedPokemonId === displayId
-              ? 'border-cyan-400 bg-slate-900/80'
-              : tile.gender === 'male'
-                ? 'border-sky-800/60 bg-slate-900/60 hover:border-sky-500'
-                : tile.gender === 'female'
-                  ? 'border-pink-800/60 bg-slate-900/60 hover:border-pink-500'
-                  : 'border-slate-700 bg-slate-900/60 hover:border-slate-500',
+              ? 'border-yellow-300 bg-slate-900/80'
+              : isReservedTarget
+                ? 'border-blue-400'
+                : tile.gender === 'male'
+                  ? 'border-sky-800/60 bg-slate-900/60 hover:border-sky-500'
+                  : tile.gender === 'female'
+                    ? 'border-pink-800/60 bg-slate-900/60 hover:border-pink-500'
+                    : 'border-slate-700 bg-slate-900/60 hover:border-slate-500',
           isLocked ? 'ring-1 ring-amber-400/60' : '',
-          isReservedTarget ? 'border-dashed border-blue-400' : '',
           isAnomalous ? 'warning-pulse border-red-500' : '',
         ].join(' ')}
         style={{ width: TILE_PX, height: TILE_PX }}
       >
         <img
-          src={getSpriteUrl(displayId, isShiny)}
+          src={tileSpriteUrl(displayId, tile.variety, isShiny)}
           alt={displayName}
           className={['h-full w-full object-contain', isOwned ? '' : 'opacity-30 grayscale'].join(' ')}
           style={{ imageRendering: 'pixelated' }}
@@ -804,7 +865,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             </button>
           </div>
         )}
-        {hasVariants && !tile.variety && (
+        {hasVariants && (!tile.variety || tile.variety.isDefault) && (
           <button
             type="button"
             onClick={(e) => toggleTileSlide(tile.pokemonId, e)}
@@ -1265,23 +1326,40 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             {selected ? (
               <InfoPanel entry={selected} nuzlocke={nuzlocke} onClose={() => setSelectedUuid(null)} />
             ) : expandedSpecies.length > 0 ? (
-              <ul className="flex flex-wrap gap-1.5">
-                {expandedSpecies.map((e) => (
-                  <li key={e.uuid}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedUuid(e.uuid)}
-                      className="flex flex-col items-center rounded border border-slate-700 bg-slate-900/50 p-1 hover:border-slate-500"
-                    >
-                      <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
-                      <span className="text-[8px] text-slate-400">
-                        {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
-                        {e.is_sandbox_anomalous && <span className="text-red-400"> ⚠</span>}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => void catchAnotherInDrawer(expandedName)}
+                  className="self-start rounded border border-cyan-700/60 px-2 py-0.5 text-cyan-300 hover:bg-cyan-900/40"
+                >
+                  + Add another duplicate
+                </button>
+                <ul className="flex flex-wrap gap-1.5">
+                  {expandedSpecies.map((e) => (
+                    <li key={e.uuid} className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUuid(e.uuid)}
+                        className="flex flex-col items-center rounded border border-slate-700 bg-slate-900/50 p-1 hover:border-slate-500"
+                      >
+                        <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
+                        <span className="text-[8px] text-slate-400">
+                          {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
+                          {e.is_sandbox_anomalous && <span className="text-red-400"> ⚠</span>}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDrawerSpecimen(e)}
+                        title="Remove this one"
+                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-red-700/60 bg-slate-950 text-[9px] text-red-300 hover:bg-red-900/60"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : (
               <SpeciesReference species={titleCase(expandedName)} />
             )}

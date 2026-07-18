@@ -1,18 +1,29 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getItemDetail, listAllItemNames, type ItemDetail } from '../services/pokeapi';
+import { useLiveQuery } from 'dexie-react-hooks';
+import { getItemDetail, getItemGenerationBulk, listAllItemNames, type ItemDetail } from '../services/pokeapi';
+import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { db, HOME_GENERATION } from '../db/schema';
 
 /**
  * Item Dex (PRD 6.15) — searchable item reference sourced live from PokéAPI
- * and cached locally. In-game location data isn't included here; PokéAPI
- * exposes that only via per-location encounter endpoints, which is a
- * separate, heavier data pull left for a future pass.
+ * and cached locally, scoped to the active game's generation the same way
+ * the Move Library is. In-game location data isn't included here; PokéAPI
+ * exposes that only via per-location encounter endpoints, a separate,
+ * heavier data pull left for a future pass.
  */
 export function ItemDex() {
   const [names, setNames] = useState<string[]>([]);
+  const [generationByName, setGenerationByName] = useState<Map<string, number>>(new Map());
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const { gameInstance } = useActiveGameInstance();
+  const gameTitle = useLiveQuery(
+    () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
+    [gameInstance],
+  );
 
   useEffect(() => {
     listAllItemNames()
@@ -20,11 +31,21 @@ export function ItemDex() {
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load item list'));
   }, []);
 
+  useEffect(() => {
+    if (names.length === 0) return;
+    getItemGenerationBulk(names).then(setGenerationByName);
+  }, [names]);
+
+  const inGameNames = useMemo(() => {
+    if (!gameTitle || gameTitle.generation === HOME_GENERATION) return names;
+    return names.filter((n) => (generationByName.get(n) ?? 1) <= gameTitle.generation);
+  }, [names, generationByName, gameTitle]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return names.slice(0, 50);
-    return names.filter((n) => n.includes(q.replace(/\s+/g, '-'))).slice(0, 50);
-  }, [names, query]);
+    if (!q) return inGameNames.slice(0, 50);
+    return inGameNames.filter((n) => n.includes(q.replace(/\s+/g, '-'))).slice(0, 50);
+  }, [inGameNames, query]);
 
   useEffect(() => {
     if (!selected) return;
@@ -37,6 +58,9 @@ export function ItemDex() {
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
+      <p className="text-slate-500">
+        {gameTitle ? `Items that exist in ${gameTitle.name} (Gen ${gameTitle.generation === HOME_GENERATION ? 'HOME — all' : gameTitle.generation})` : 'Loading…'} — {inGameNames.length}/{names.length}
+      </p>
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
