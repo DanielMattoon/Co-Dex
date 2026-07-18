@@ -14,10 +14,12 @@ import {
   setBoxLabel,
 } from '../services/boxes';
 import { InfoPanel } from './InfoPanel';
+import { SpeciesReference } from './SpeciesReference';
 
 const GEN = Generations.get(9);
 const ALL_TYPES = [...GEN.types].map((t) => t.name).filter((t) => t !== '???');
 const BADGE_COLORS = ['#22d3ee', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
+const TILE_PX = 56;
 
 type ViewMode = 'national' | 'regional' | 'type' | 'custom';
 
@@ -50,18 +52,31 @@ function speciesType(name: string): string[] {
   return GEN.species.get(toID(name))?.types ?? [];
 }
 
+function dexRangeLabel(tiles: (Tile | null)[]): string | null {
+  const nums = tiles.filter((t): t is Tile => t !== null).map((t) => t.regionalNumber ?? t.pokemonId);
+  if (nums.length === 0) return null;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  return `#${String(min).padStart(4, '0')}–${String(max).padStart(4, '0')}`;
+}
+
 /**
  * The unified Living Dex (PRD 6.8) — one tile per species across the whole
- * dex, greyed out until caught, exactly like the box grid it replaces used
- * to be per-slot. Box grouping survives as a purely visual/organizational
- * layer (chunked into the game's real box size, user-nameable) rather than
- * literal PC slot storage: National/Regional/Type order is dex-defined, so
- * only Custom View allows rearranging/deleting whole box groups — the
- * "sandbox" the rest of the views don't have room for.
+ * dex, greyed out until caught. Clicking a tile catches it (or catches
+ * another one, if already owned) instantly — no confirmation step, matching
+ * the fast tap-to-track feel of pokedextracker.com. Hovering a tile reveals
+ * a small detail button that opens reference/specimen info without
+ * triggering a catch. Box grouping survives as a purely visual/
+ * organizational layer (chunked to the game's real box dimensions,
+ * user-nameable) rather than literal PC slot storage: National/Regional/
+ * Type order is dex-defined, so only Custom View allows rearranging/
+ * deleting whole box groups — the "sandbox" the rest of the views don't
+ * have room for.
  */
 export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matchingPokemonIds }: SpeciesGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('national');
   const [separateBox, setSeparateBox] = useState(true);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
   const [nationalSpecies, setNationalSpecies] = useState<SpeciesWithId[]>([]);
   const [regionalDex, setRegionalDex] = useState<Tile[]>([]);
   const [rareSpecies, setRareSpecies] = useState<Set<string>>(new Set());
@@ -76,11 +91,6 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
 
   const [expandedPokemonId, setExpandedPokemonId] = useState<number | null>(null);
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
-  const [catching, setCatching] = useState<Tile | null>(null);
-  const [catchLevel, setCatchLevel] = useState(5);
-  const [catchShiny, setCatchShiny] = useState(false);
-  const [catchNickname, setCatchNickname] = useState('');
-  const [catchBall, setCatchBall] = useState('');
 
   const [editingBoxNumber, setEditingBoxNumber] = useState<number | null>(null);
   const [boxLabelDraft, setBoxLabelDraft] = useState('');
@@ -91,7 +101,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [tagDraft, setTagDraft] = useState('');
   const [confirmingClear, setConfirmingClear] = useState(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const tileRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const tileRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const dragState = useRef<{ startX: number; startY: number } | null>(null);
 
   useEffect(() => {
@@ -127,6 +137,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   }, [entries]);
 
   const boxSize = gameTitle?.boxes_slots ?? 30;
+  const boxWidth = gameTitle?.box_width ?? 6;
   const capacity = gameTitle ? gameTitle.box_count * gameTitle.boxes_slots : 0;
   const overCapacity = capacity > 0 && entries.length > capacity;
 
@@ -328,6 +339,18 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     window.addEventListener('mouseup', onUp);
   }
 
+  async function catchTile(tile: Tile) {
+    await quickCatch({
+      gameInstanceId,
+      species: titleCase(tile.name),
+      pokemonId: tile.pokemonId,
+      level: 5,
+      shiny: false,
+      nickname: null,
+      ball: null,
+    });
+  }
+
   function handleTileClick(tile: Tile, e: ReactMouseEvent) {
     const owned = ownedByPokemonId.get(tile.pokemonId) ?? [];
     if (e.shiftKey && owned.length > 0) {
@@ -342,35 +365,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       return;
     }
     setMultiSelected(new Set());
-    if (owned.length > 0) {
-      setExpandedPokemonId(tile.pokemonId);
-      setSelectedUuid(null);
-    } else {
-      openQuickCatch(tile);
-    }
+    void catchTile(tile);
   }
 
-  function openQuickCatch(tile: Tile) {
-    setCatching(tile);
-    setCatchLevel(5);
-    setCatchShiny(false);
-    setCatchNickname('');
-    setCatchBall('');
-    setExpandedPokemonId(null);
-  }
-
-  async function confirmCatch() {
-    if (!catching) return;
-    await quickCatch({
-      gameInstanceId,
-      species: titleCase(catching.name),
-      pokemonId: catching.pokemonId,
-      level: catchLevel,
-      shiny: catchShiny,
-      nickname: catchNickname.trim() || null,
-      ball: catchBall.trim() || null,
-    });
-    setCatching(null);
+  function handleDetailClick(tile: Tile, e: ReactMouseEvent) {
+    e.stopPropagation();
+    setMultiSelected(new Set());
+    setSelectedUuid(null);
+    setExpandedPokemonId(tile.pokemonId);
   }
 
   async function handleAddTagToSelection() {
@@ -436,6 +438,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setConfirmingDeleteBox(null);
   }
 
+  const expandedTile = expandedPokemonId !== null ? tiles.find((t) => t.pokemonId === expandedPokemonId) ?? baseTiles.find((t) => t.pokemonId === expandedPokemonId) : undefined;
   const expandedSpecies = expandedPokemonId !== null ? (ownedByPokemonId.get(expandedPokemonId) ?? []) : [];
   const selected = entries.find((e) => e.uuid === selectedUuid) ?? null;
 
@@ -449,17 +452,23 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const isLocked = owned.some((o) => o.breeding_project_lock?.is_locked);
 
     return (
-      <button
+      <div
         key={tile.pokemonId}
         ref={(el) => {
           if (el) tileRefs.current.set(tile.pokemonId, el);
           else tileRefs.current.delete(tile.pokemonId);
         }}
-        type="button"
+        role="button"
+        tabIndex={0}
         onClick={(e) => handleTileClick(tile, e)}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          handleTileClick(tile, e as unknown as ReactMouseEvent);
+        }}
         title={titleCase(tile.name)}
         className={[
-          'relative flex aspect-square flex-col items-center justify-center rounded border p-0.5',
+          'group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded border p-0.5 outline-none',
           isMultiSelected
             ? 'border-amber-400 bg-amber-500/10'
             : expandedPokemonId === tile.pokemonId
@@ -476,7 +485,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           style={{ imageRendering: 'pixelated' }}
         />
         <span className="truncate text-[8px] text-slate-500">#{tile.regionalNumber ?? tile.pokemonId}</span>
-        {owned.length > 1 && <span className="absolute right-0.5 top-0.5 rounded-full bg-slate-950/80 px-1 text-[8px] text-cyan-300">×{owned.length}</span>}
+        {owned.length > 1 && <span className="absolute bottom-0.5 right-0.5 rounded-full bg-slate-950/80 px-1 text-[8px] text-cyan-300">×{owned.length}</span>}
         {tileBadges.length > 0 && (
           <span className="absolute bottom-0.5 left-0.5 flex gap-0.5" title={tileBadges.map((b) => b.gameTitleName).join(', ')}>
             {tileBadges.slice(0, 3).map((b, i) => (
@@ -484,35 +493,92 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             ))}
           </span>
         )}
-      </button>
+        <button
+          type="button"
+          onClick={(e) => handleDetailClick(tile, e)}
+          title={`${titleCase(tile.name)} details`}
+          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
+        >
+          ⓘ
+        </button>
+      </div>
     );
   }
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {(['national', 'regional', 'type', 'custom'] as ViewMode[]).map((mode) => (
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
           <button
-            key={mode}
             type="button"
-            onClick={() => setViewMode(mode)}
+            onClick={() => setOrganizeOpen((v) => !v)}
             className={[
-              'rounded border px-2 py-0.5 text-[10px] capitalize',
-              viewMode === mode ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+              'rounded border px-2.5 py-1 text-[10px]',
+              organizeOpen ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60',
             ].join(' ')}
           >
-            {mode}
+            Organize &amp; Filter {organizeOpen ? '▲' : '▼'}
           </button>
-        ))}
-        {viewMode === 'national' && (
-          <button
-            type="button"
-            onClick={() => setSeparateBox((v) => !v)}
-            className={['rounded border px-2 py-0.5 text-[10px]', separateBox ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
-          >
-            Separate Box
-          </button>
-        )}
+          {organizeOpen && (
+            <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[280px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
+              <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">View</p>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {(['national', 'regional', 'type', 'custom'] as ViewMode[]).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setViewMode(mode)}
+                    className={[
+                      'rounded border px-2 py-0.5 text-[10px] capitalize',
+                      viewMode === mode ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+                    ].join(' ')}
+                  >
+                    {mode}
+                  </button>
+                ))}
+                {viewMode === 'national' && (
+                  <button
+                    type="button"
+                    onClick={() => setSeparateBox((v) => !v)}
+                    className={['rounded border px-2 py-0.5 text-[10px]', separateBox ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
+                  >
+                    Separate Box
+                  </button>
+                )}
+              </div>
+
+              {isCustom ? (
+                <p className="text-slate-500">Custom View is your sandbox — filters are hidden here so the true order always stays visible.</p>
+              ) : (
+                <>
+                  <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Filter</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button" onClick={() => setShinyOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', shinyOnly ? 'border-amber-400/60 bg-amber-500/20 text-amber-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                      ★ Shiny
+                    </button>
+                    <button type="button" onClick={() => setRareOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', rareOnly ? 'border-purple-400/60 bg-purple-500/20 text-purple-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                      Legendary/Mythical
+                    </button>
+                    <button type="button" onClick={() => setFlaggedOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', flaggedOnly ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                      Flagged
+                    </button>
+                    <button type="button" onClick={() => setHideCaught((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', hideCaught ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                      Hide Caught
+                    </button>
+                    <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300 outline-none focus:border-cyan-400">
+                      <option value="">All types</option>
+                      {ALL_TYPES.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
         <span className="ml-auto text-slate-500">
           {entries.length > 0 && `${new Set(entries.map((e) => e.pokemon_id)).size}/${baseTiles.length || '…'} caught`}
         </span>
@@ -522,33 +588,6 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
         <div className="warning-pulse rounded-lg border border-red-500 bg-red-950/40 p-2 text-red-300">
           {entries.length} specimens on hand exceeds {gameTitle?.name}'s real storage capacity ({capacity}). Something's off — check for
           duplicates or specimens that should have been traded/released.
-        </div>
-      )}
-
-      {isCustom ? (
-        <p className="text-slate-500">Custom View is your sandbox — full reorder/rename/delete on box groups, filters hidden so the true order always stays visible.</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          <button type="button" onClick={() => setShinyOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', shinyOnly ? 'border-amber-400/60 bg-amber-500/20 text-amber-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-            ★ Shiny
-          </button>
-          <button type="button" onClick={() => setRareOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', rareOnly ? 'border-purple-400/60 bg-purple-500/20 text-purple-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-            Legendary/Mythical
-          </button>
-          <button type="button" onClick={() => setFlaggedOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', flaggedOnly ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-            Flagged
-          </button>
-          <button type="button" onClick={() => setHideCaught((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', hideCaught ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-            Hide Caught
-          </button>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300 outline-none focus:border-cyan-400">
-            <option value="">All types</option>
-            {ALL_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
         </div>
       )}
 
@@ -594,108 +633,93 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       )}
 
       <div ref={gridRef} onMouseDown={handleGridMouseDown} className="flex-1 select-none overflow-y-auto">
-        {viewMode === 'type'
-          ? typeGroups.map((group) => (
-              <div key={group.type} className="mb-2">
-                <p className="mb-1 font-retro text-[9px] capitalize text-slate-300">{group.type}</p>
-                <div className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))' }}>
-                  {group.tiles.map((tile) => renderTile(tile))}
+        <div className="flex flex-wrap gap-3">
+          {viewMode === 'type'
+            ? typeGroups.map((group) => (
+                <div key={group.type}>
+                  <p className="mb-1 font-retro text-[9px] capitalize text-slate-300">{group.type}</p>
+                  <div
+                    className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5"
+                    style={{ gridTemplateColumns: `repeat(${boxWidth}, ${TILE_PX}px)` }}
+                  >
+                    {group.tiles.map((tile) => renderTile(tile))}
+                  </div>
                 </div>
-              </div>
-            ))
-          : boxGroups.map((group) => (
-              <div key={group.boxNumber} className="mb-2">
-                <div className="mb-1 flex items-center gap-2">
-                  {editingBoxNumber === group.boxNumber ? (
-                    <>
-                      <input
-                        value={boxLabelDraft}
-                        onChange={(e) => setBoxLabelDraft(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && void saveBoxLabel()}
-                        autoFocus
-                        className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
-                      />
-                      <button type="button" onClick={() => void saveBoxLabel()} className="text-cyan-300">✓</button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => startEditBoxLabel(group)} className="font-retro text-[9px] text-slate-300 hover:text-cyan-300">
-                      {group.label} <span className="text-slate-500">({group.tiles.filter((t) => t && ownedByPokemonId.has(t.pokemonId)).length}/{group.tiles.length})</span>
-                    </button>
-                  )}
-                  {isCustom && (
-                    <div className="ml-auto flex items-center gap-1.5 text-slate-500">
-                      <button type="button" disabled={group.boxNumber === 1} onClick={() => void moveBoxGroup(group.boxNumber, 'up')} className="hover:text-cyan-300 disabled:opacity-20">◀</button>
-                      <button type="button" disabled={group.boxNumber === boxGroups.length} onClick={() => void moveBoxGroup(group.boxNumber, 'down')} className="hover:text-cyan-300 disabled:opacity-20">▶</button>
-                      <button type="button" onClick={() => setConfirmingDeleteBox(group.boxNumber)} className="text-[10px] hover:text-red-400">Delete…</button>
+              ))
+            : boxGroups.map((group) => {
+                const range = dexRangeLabel(group.tiles);
+                const ownedCount = group.tiles.filter((t) => t && ownedByPokemonId.has(t.pokemonId)).length;
+                return (
+                  <div key={group.boxNumber}>
+                    <div className="mb-1 flex items-center gap-2">
+                      {editingBoxNumber === group.boxNumber ? (
+                        <>
+                          <input
+                            value={boxLabelDraft}
+                            onChange={(e) => setBoxLabelDraft(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && void saveBoxLabel()}
+                            autoFocus
+                            className="w-32 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
+                          />
+                          <button type="button" onClick={() => void saveBoxLabel()} className="text-cyan-300">✓</button>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => startEditBoxLabel(group)} className="font-retro text-[9px] text-slate-300 hover:text-cyan-300">
+                          {group.label} {!isCustom && range && <span className="text-slate-500">{range}</span>} <span className="text-slate-500">({ownedCount}/{group.tiles.length})</span>
+                        </button>
+                      )}
+                      {isCustom && (
+                        <div className="ml-auto flex items-center gap-1.5 text-slate-500">
+                          <button type="button" disabled={group.boxNumber === 1} onClick={() => void moveBoxGroup(group.boxNumber, 'up')} className="hover:text-cyan-300 disabled:opacity-20">◀</button>
+                          <button type="button" disabled={group.boxNumber === boxGroups.length} onClick={() => void moveBoxGroup(group.boxNumber, 'down')} className="hover:text-cyan-300 disabled:opacity-20">▶</button>
+                          <button type="button" onClick={() => setConfirmingDeleteBox(group.boxNumber)} className="text-[10px] hover:text-red-400">Delete…</button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                {confirmingDeleteBox === group.boxNumber && (
-                  <div className="mb-1 rounded-lg border border-red-900/50 bg-red-950/30 p-2">
-                    <p className="mb-2 text-red-300">Migrate this box's specimens to the end of Custom order, or delete them permanently?</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'migrate')} className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30">
-                        Migrate & delete box
-                      </button>
-                      <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'delete')} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
-                        Delete permanently
-                      </button>
-                      <button type="button" onClick={() => setConfirmingDeleteBox(null)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
-                        Cancel
-                      </button>
+                    {confirmingDeleteBox === group.boxNumber && (
+                      <div className="mb-1 w-max min-w-[260px] rounded-lg border border-red-900/50 bg-red-950/30 p-2">
+                        <p className="mb-2 text-red-300">Migrate this box's specimens to the end of Custom order, or delete them permanently?</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'migrate')} className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30">
+                            Migrate & delete box
+                          </button>
+                          <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'delete')} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
+                            Delete permanently
+                          </button>
+                          <button type="button" onClick={() => setConfirmingDeleteBox(null)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div
+                      className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5"
+                      style={{ gridTemplateColumns: `repeat(${boxWidth}, ${TILE_PX}px)` }}
+                    >
+                      {group.tiles.map((tile, i) =>
+                        tile ? (
+                          renderTile(tile)
+                        ) : (
+                          <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" />
+                        ),
+                      )}
                     </div>
                   </div>
-                )}
-
-                <div className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(56px, 1fr))' }}>
-                  {group.tiles.map((tile, i) =>
-                    tile ? (
-                      renderTile(tile)
-                    ) : (
-                      <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" />
-                    ),
-                  )}
-                </div>
-              </div>
-            ))}
+                );
+              })}
+        </div>
       </div>
 
-      {catching && (
-        <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-2">
-          <div className="mb-2 flex items-center gap-2">
-            <img src={getSpriteUrl(catching.pokemonId, catchShiny)} alt={catching.name} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
-            <p className="text-emerald-300">Catch {titleCase(catching.name)}?</p>
-            <button type="button" onClick={() => setCatching(null)} className="ml-auto text-[10px] text-slate-400 hover:text-slate-200">
-              cancel
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1 text-slate-300">
-              Level
-              <input type="number" min={1} max={100} value={catchLevel} onChange={(e) => setCatchLevel(Math.max(1, Math.min(100, Number(e.target.value))))} className="w-12 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-slate-200" />
-            </label>
-            <label className="flex items-center gap-1 text-slate-300">
-              <input type="checkbox" checked={catchShiny} onChange={(e) => setCatchShiny(e.target.checked)} /> Shiny
-            </label>
-            <input value={catchNickname} onChange={(e) => setCatchNickname(e.target.value)} placeholder="Nickname (optional)" className="w-32 rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-slate-200" />
-            <input value={catchBall} onChange={(e) => setCatchBall(e.target.value)} placeholder="Ball (optional)" className="w-28 rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-slate-200" />
-            <button type="button" onClick={() => void confirmCatch()} className="ml-auto rounded border border-emerald-500/50 bg-emerald-500/20 px-3 py-1 text-emerald-300 hover:bg-emerald-500/30">
-              Catch!
-            </button>
-          </div>
-        </div>
-      )}
-
-      {expandedPokemonId !== null && expandedSpecies.length > 0 && (
+      {expandedPokemonId !== null && expandedTile && (
         <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-2">
           <div className="mb-1.5 flex items-center justify-between">
-            <p className="font-retro text-[9px] text-slate-200">{expandedSpecies[0].species} — {expandedSpecies.length} owned</p>
+            <p className="font-retro text-[9px] text-slate-200">
+              {titleCase(expandedTile.name)} {expandedSpecies.length > 0 && <span className="text-slate-500">— {expandedSpecies.length} owned</span>}
+            </p>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => openQuickCatch({ pokemonId: expandedPokemonId, name: toID(expandedSpecies[0].species) })} className="text-[10px] text-emerald-400 hover:underline">
-                + Catch another
-              </button>
-              {isCustom && (
+              {isCustom && expandedSpecies.length > 0 && (
                 <span className="flex flex-col text-slate-500">
                   <button type="button" onClick={() => void reorderSpecies(expandedPokemonId, 'up')} className="hover:text-cyan-300">▲</button>
                   <button type="button" onClick={() => void reorderSpecies(expandedPokemonId, 'down')} className="hover:text-cyan-300">▼</button>
@@ -706,22 +730,26 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               </button>
             </div>
           </div>
-          <ul className="flex flex-wrap gap-1.5">
-            {expandedSpecies.map((e) => (
-              <li key={e.uuid}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedUuid(e.uuid)}
-                  className={['flex flex-col items-center rounded border p-1', selectedUuid === e.uuid ? 'border-cyan-400 bg-slate-900/80' : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'].join(' ')}
-                >
-                  <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
-                  <span className="text-[8px] text-slate-400">
-                    {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          {expandedSpecies.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {expandedSpecies.map((e) => (
+                <li key={e.uuid}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedUuid(e.uuid)}
+                    className={['flex flex-col items-center rounded border p-1', selectedUuid === e.uuid ? 'border-cyan-400 bg-slate-900/80' : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'].join(' ')}
+                  >
+                    <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
+                    <span className="text-[8px] text-slate-400">
+                      {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <SpeciesReference species={titleCase(expandedTile.name)} />
+          )}
         </div>
       )}
 

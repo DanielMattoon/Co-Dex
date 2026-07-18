@@ -6,6 +6,8 @@ export interface GameTitle {
   generation: number;
   box_count: number;
   boxes_slots: number;
+  /** Real in-game box grid width (columns) — every mainline title since Gen 3 uses a 6-wide, 5-tall box. */
+  box_width: number;
   /**
    * PokeAPI regional Pokédex resource name(s) for this title, in display
    * order (e.g. Kalos titles split across 3 sub-dexes: central/coastal/

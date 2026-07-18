@@ -11,15 +11,15 @@ const TRAINER_PROFILE_ID = 'default';
  * covering one title per generation.
  */
 const SEED_TITLES: GameTitle[] = [
-  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, pokedex_slugs: ['kanto'] },
-  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, pokedex_slugs: ['hoenn'] },
-  { game_title_id: 'heartgold', name: 'HeartGold', generation: 4, box_count: 18, boxes_slots: 30, pokedex_slugs: ['updated-johto'] },
-  { game_title_id: 'platinum', name: 'Platinum', generation: 4, box_count: 18, boxes_slots: 30, pokedex_slugs: ['extended-sinnoh'] },
-  { game_title_id: 'white', name: 'White', generation: 5, box_count: 24, boxes_slots: 30, pokedex_slugs: ['original-unova'] },
-  { game_title_id: 'y', name: 'Y', generation: 6, box_count: 31, boxes_slots: 30, pokedex_slugs: ['kalos-central', 'kalos-coastal', 'kalos-mountain'] },
-  { game_title_id: 'sun', name: 'Sun', generation: 7, box_count: 32, boxes_slots: 30, pokedex_slugs: ['original-alola'] },
-  { game_title_id: 'sword', name: 'Sword', generation: 8, box_count: 32, boxes_slots: 30, pokedex_slugs: ['galar'] },
-  { game_title_id: 'scarlet', name: 'Scarlet', generation: 9, box_count: 32, boxes_slots: 30, pokedex_slugs: ['paldea'] },
+  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'] },
+  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'] },
+  { game_title_id: 'heartgold', name: 'HeartGold', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-johto'] },
+  { game_title_id: 'platinum', name: 'Platinum', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['extended-sinnoh'] },
+  { game_title_id: 'white', name: 'White', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-unova'] },
+  { game_title_id: 'y', name: 'Y', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kalos-central', 'kalos-coastal', 'kalos-mountain'] },
+  { game_title_id: 'sun', name: 'Sun', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-alola'] },
+  { game_title_id: 'sword', name: 'Sword', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['galar'] },
+  { game_title_id: 'scarlet', name: 'Scarlet', generation: 9, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['paldea'] },
 ];
 
 export async function ensureSeedTitles(): Promise<void> {
