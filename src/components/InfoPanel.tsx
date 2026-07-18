@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Generations, toID } from '@smogon/calc';
 import { db, type VaultEntry } from '../db/schema';
 import { getSpriteUrl, getEvolutionChain, getLevelUpMoves, type EvolutionChainData, type LevelUpMove } from '../services/pokeapi';
 import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
+import { checkTransferLegality, executeTransfer } from '../services/transfer';
 import { StatBar } from './StatBar';
 
 const GEN = Generations.get(9);
@@ -43,6 +45,45 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   const [levelUpMoves, setLevelUpMoves] = useState<LevelUpMove[] | null>(null);
   const [heldItem, setHeldItem] = useState(entry.held_item ?? '');
   const [tagInput, setTagInput] = useState('');
+
+  const instances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
+  const titles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
+  const titleById = useMemo(() => new Map(titles.map((t) => [t.game_title_id, t])), [titles]);
+  const otherInstances = instances.filter((i) => i.game_instance_id !== entry.current_game_instance_id);
+
+  const [transferTargetId, setTransferTargetId] = useState('');
+  const [transferMode, setTransferMode] = useState<'strict' | 'sandbox'>('strict');
+  const [sandboxAck, setSandboxAck] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferring, setTransferring] = useState(false);
+
+  useEffect(() => {
+    if (!transferTargetId && otherInstances.length > 0) setTransferTargetId(otherInstances[0].game_instance_id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otherInstances.length]);
+
+  const transferTargetTitle = (() => {
+    const instance = otherInstances.find((i) => i.game_instance_id === transferTargetId);
+    return instance ? titleById.get(instance.game_title_id) : undefined;
+  })();
+  const transferCheck = transferTargetTitle ? checkTransferLegality(entry, transferTargetTitle) : null;
+
+  async function handleTransfer() {
+    if (!transferTargetTitle) return;
+    setTransferError(null);
+    setTransferring(true);
+    try {
+      const result = await executeTransfer(entry, transferTargetId, transferTargetTitle, transferMode);
+      if (!result.ok) {
+        setTransferError(result.error ?? 'Transfer blocked.');
+      } else {
+        setSandboxAck(false);
+        onClose();
+      }
+    } finally {
+      setTransferring(false);
+    }
+  }
 
   useEffect(() => {
     setHeldItem(entry.held_item ?? '');
@@ -111,6 +152,13 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
         </button>
       </div>
 
+      {entry.is_sandbox_anomalous && (
+        <div className="warning-pulse mb-2 rounded border border-red-500 bg-red-950/40 p-2 text-red-300">
+          Anomalous State — this specimen reached its current game via a Sandbox Mode transfer that wasn't strictly legal. Never
+          confuse it with legitimate progress.
+        </div>
+      )}
+
       {entry.catchLocation && <p className="mb-2 text-slate-500">Caught: {entry.catchLocation}</p>}
 
       {baseStats && (
@@ -168,6 +216,74 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
             Set
           </button>
         </div>
+      </div>
+
+      <div className="mb-3">
+        <p className="mb-1 text-slate-500">Transfer (PRD 5.1 — Strict/Sandbox)</p>
+        {otherInstances.length === 0 ? (
+          <p className="text-slate-600">No other saves to transfer to yet — create one from Backup → Saves.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={transferTargetId}
+                onChange={(e) => {
+                  setTransferTargetId(e.target.value);
+                  setTransferError(null);
+                  setSandboxAck(false);
+                }}
+                className="rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 outline-none focus:border-cyan-400"
+              >
+                {otherInstances.map((i) => (
+                  <option key={i.game_instance_id} value={i.game_instance_id}>
+                    {titleById.get(i.game_title_id)?.name ?? i.game_title_id}
+                  </option>
+                ))}
+              </select>
+              <div className="flex overflow-hidden rounded border border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => { setTransferMode('strict'); setSandboxAck(false); setTransferError(null); }}
+                  className={['px-2 py-1', transferMode === 'strict' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:bg-slate-800/60'].join(' ')}
+                >
+                  Strict
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTransferMode('sandbox'); setTransferError(null); }}
+                  className={['px-2 py-1', transferMode === 'sandbox' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:bg-slate-800/60'].join(' ')}
+                >
+                  Sandbox
+                </button>
+              </div>
+            </div>
+
+            {transferCheck && !transferCheck.legal && (
+              <p className={transferMode === 'strict' ? 'text-red-400' : 'text-amber-400'}>{transferCheck.reasons.join(' ')}</p>
+            )}
+            {transferMode === 'sandbox' && transferCheck && !transferCheck.legal && (
+              <label className="flex items-center gap-1.5 text-amber-300">
+                <input type="checkbox" checked={sandboxAck} onChange={(e) => setSandboxAck(e.target.checked)} />
+                I understand this will flag the specimen Anomalous and simulate an illegal transfer.
+              </label>
+            )}
+            {transferError && <p className="text-red-400">{transferError}</p>}
+
+            <button
+              type="button"
+              onClick={() => void handleTransfer()}
+              disabled={
+                transferring ||
+                !transferTargetTitle ||
+                (transferMode === 'strict' && !!transferCheck && !transferCheck.legal) ||
+                (transferMode === 'sandbox' && !!transferCheck && !transferCheck.legal && !sandboxAck)
+              }
+              className="self-start rounded border border-cyan-500/50 bg-cyan-500/20 px-3 py-1 text-cyan-300 hover:bg-cyan-500/30 disabled:opacity-40"
+            >
+              {transferring ? 'Transferring…' : 'Transfer'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mb-3">

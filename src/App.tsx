@@ -2,6 +2,7 @@ import { HashRouter, NavLink, Route, Routes, useLocation } from 'react-router-do
 import { ConsoleFrame } from './components/ConsoleFrame';
 import { BottomNav } from './components/BottomNav';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { GameSwitcher } from './components/GameSwitcher';
 import { MapScreen } from './components/MapScreen';
 import { LinkCable } from './components/LinkCable';
 import { CollectionShelf } from './components/CollectionShelf';
@@ -12,15 +13,18 @@ import { ProfileScreen } from './screens/ProfileScreen';
 
 function AppHeader() {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between gap-2">
       <h1 className="font-retro text-sm text-cyan-300">Co-Dex</h1>
-      <NavLink
-        to="/backup"
-        className="text-base text-slate-400 hover:text-slate-200"
-        aria-label="Backup & settings"
-      >
-        ⚙
-      </NavLink>
+      <div className="flex items-center gap-2">
+        <GameSwitcher />
+        <NavLink
+          to="/backup"
+          className="text-base text-slate-400 hover:text-slate-200"
+          aria-label="Backup & settings"
+        >
+          ⚙
+        </NavLink>
+      </div>
     </div>
   );
 }

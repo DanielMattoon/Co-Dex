@@ -66,17 +66,25 @@ function dexRangeLabel(tiles: (Tile | null)[]): string | null {
  * another one, if already owned) instantly — no confirmation step, matching
  * the fast tap-to-track feel of pokedextracker.com. Hovering a tile reveals
  * a small detail button that opens reference/specimen info without
- * triggering a catch. Box grouping survives as a purely visual/
- * organizational layer (chunked to the game's real box dimensions,
- * user-nameable) rather than literal PC slot storage: National/Regional/
- * Type order is dex-defined, so only Custom View allows rearranging/
- * deleting whole box groups — the "sandbox" the rest of the views don't
- * have room for.
+ * triggering a catch, in a side drawer (partial by default, expandable to
+ * full page) rather than an easy-to-miss strip at the bottom.
+ *
+ * "Organize" and "Filter" are deliberately separate controls: Organize only
+ * changes how the same tiles are arranged/grouped (view mode, Separate
+ * Box), Filter changes which tiles are excluded from view — a different
+ * kind of operation the PRD (6.8 vs 6.9) already treats as distinct.
+ *
+ * Box grouping survives as a purely visual/organizational layer (chunked to
+ * the game's real box dimensions, user-nameable) rather than literal PC
+ * slot storage: National/Regional/Type order is dex-defined, so only
+ * Custom View allows rearranging/deleting whole box groups — the "sandbox"
+ * the rest of the views don't have room for.
  */
 export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matchingPokemonIds }: SpeciesGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('national');
   const [separateBox, setSeparateBox] = useState(true);
   const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [filterOpen, setFilterOpen] = useState(false);
   const [nationalSpecies, setNationalSpecies] = useState<SpeciesWithId[]>([]);
   const [regionalDex, setRegionalDex] = useState<Tile[]>([]);
   const [rareSpecies, setRareSpecies] = useState<Set<string>>(new Set());
@@ -86,11 +94,13 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [shinyOnly, setShinyOnly] = useState(false);
   const [rareOnly, setRareOnly] = useState(false);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  const [anomalousOnly, setAnomalousOnly] = useState(false);
   const [hideCaught, setHideCaught] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
 
   const [expandedPokemonId, setExpandedPokemonId] = useState<number | null>(null);
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
+  const [drawerExpanded, setDrawerExpanded] = useState(false);
 
   const [editingBoxNumber, setEditingBoxNumber] = useState<number | null>(null);
   const [boxLabelDraft, setBoxLabelDraft] = useState('');
@@ -215,11 +225,12 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       if (shinyOnly && !owned.some((o) => o.shiny)) return false;
       if (rareOnly && !rareSpecies.has(titleCase(t.name)) && !rareSpecies.has(t.name)) return false;
       if (flaggedOnly && !owned.some((o) => o.tags.length > 0)) return false;
+      if (anomalousOnly && !owned.some((o) => o.is_sandbox_anomalous)) return false;
       if (typeFilter && !speciesType(t.name).includes(typeFilter)) return false;
       if (matchingPokemonIds && !matchingPokemonIds.has(t.pokemonId)) return false;
       return true;
     });
-  }, [baseTiles, viewMode, isCustom, entries, ownedByPokemonId, hideCaught, shinyOnly, rareOnly, rareSpecies, flaggedOnly, typeFilter, matchingPokemonIds]);
+  }, [baseTiles, viewMode, isCustom, entries, ownedByPokemonId, hideCaught, shinyOnly, rareOnly, rareSpecies, flaggedOnly, anomalousOnly, typeFilter, matchingPokemonIds]);
 
   // --- Box-group chunking (National/Regional/Custom) ---
   const boxGroups: BoxGroup[] = useMemo(() => {
@@ -276,34 +287,6 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setEditingBoxNumber(null);
     setConfirmingDeleteBox(null);
   }, [viewMode]);
-
-  useEffect(() => {
-    if (multiSelected.size === 0) return;
-
-    function onKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
-
-      const uuids = entries.filter((en) => multiSelected.has(en.pokemon_id)).map((en) => en.uuid);
-      if (uuids.length === 0) return;
-      if (e.key === 's' || e.key === 'S') {
-        e.preventDefault();
-        void bulkToggleShiny(uuids);
-      } else if (e.key === 'c' || e.key === 'C') {
-        e.preventDefault();
-        void bulkToggleFainted(uuids);
-      } else if (e.key === 'h' || e.key === 'H') {
-        e.preventDefault();
-        setTaggingSelection(true);
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        e.preventDefault();
-        setConfirmingClear(true);
-      }
-    }
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [multiSelected, entries]);
 
   function rectsIntersect(a: DOMRect, b: DOMRect): boolean {
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
@@ -375,16 +358,30 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setExpandedPokemonId(tile.pokemonId);
   }
 
+  function closeDrawer() {
+    setExpandedPokemonId(null);
+    setSelectedUuid(null);
+    setDrawerExpanded(false);
+  }
+
+  const selectedSpecimenIds = useMemo(() => entries.filter((en) => multiSelected.has(en.pokemon_id)).map((en) => en.uuid), [entries, multiSelected]);
+
+  async function handleToggleShinySelection() {
+    await bulkToggleShiny(selectedSpecimenIds);
+  }
+
+  async function handleToggleFaintedSelection() {
+    await bulkToggleFainted(selectedSpecimenIds);
+  }
+
   async function handleAddTagToSelection() {
-    const uuids = entries.filter((en) => multiSelected.has(en.pokemon_id)).map((en) => en.uuid);
-    await bulkAddTag(uuids, tagDraft);
+    await bulkAddTag(selectedSpecimenIds, tagDraft);
     setTagDraft('');
     setTaggingSelection(false);
   }
 
   async function handleClearSelection() {
-    const uuids = entries.filter((en) => multiSelected.has(en.pokemon_id)).map((en) => en.uuid);
-    await bulkDelete(uuids);
+    await bulkDelete(selectedSpecimenIds);
     setMultiSelected(new Set());
     setConfirmingClear(false);
   }
@@ -441,11 +438,13 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const expandedTile = expandedPokemonId !== null ? tiles.find((t) => t.pokemonId === expandedPokemonId) ?? baseTiles.find((t) => t.pokemonId === expandedPokemonId) : undefined;
   const expandedSpecies = expandedPokemonId !== null ? (ownedByPokemonId.get(expandedPokemonId) ?? []) : [];
   const selected = entries.find((e) => e.uuid === selectedUuid) ?? null;
+  const drawerOpen = expandedPokemonId !== null;
 
   function renderTile(tile: Tile) {
     const owned = ownedByPokemonId.get(tile.pokemonId) ?? [];
     const isOwned = owned.length > 0;
     const isShiny = owned.some((o) => o.shiny);
+    const isAnomalous = owned.some((o) => o.is_sandbox_anomalous);
     const tileBadges = badges.get(tile.pokemonId) ?? [];
     const isMultiSelected = multiSelected.has(tile.pokemonId);
     const isReservedTarget = reservedTargetSpecies.has(toID(tile.name));
@@ -476,6 +475,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               : 'border-slate-700 bg-slate-900/60 hover:border-slate-500',
           isLocked ? 'ring-1 ring-amber-400/60' : '',
           isReservedTarget ? 'border-dashed border-amber-400' : '',
+          isAnomalous ? 'warning-pulse border-red-500' : '',
         ].join(' ')}
       >
         <img
@@ -506,254 +506,301 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   }
 
   return (
-    <div className="flex h-full flex-col gap-2 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setOrganizeOpen((v) => !v)}
-            className={[
-              'rounded border px-2.5 py-1 text-[10px]',
-              organizeOpen ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60',
-            ].join(' ')}
-          >
-            Organize &amp; Filter {organizeOpen ? '▲' : '▼'}
-          </button>
-          {organizeOpen && (
-            <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[280px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
-              <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">View</p>
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {(['national', 'regional', 'type', 'custom'] as ViewMode[]).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setViewMode(mode)}
-                    className={[
-                      'rounded border px-2 py-0.5 text-[10px] capitalize',
-                      viewMode === mode ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-                    ].join(' ')}
-                  >
-                    {mode}
-                  </button>
-                ))}
-                {viewMode === 'national' && (
-                  <button
-                    type="button"
-                    onClick={() => setSeparateBox((v) => !v)}
-                    className={['rounded border px-2 py-0.5 text-[10px]', separateBox ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
-                  >
-                    Separate Box
-                  </button>
-                )}
-              </div>
-
-              {isCustom ? (
-                <p className="text-slate-500">Custom View is your sandbox — filters are hidden here so the true order always stays visible.</p>
-              ) : (
-                <>
-                  <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Filter</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button type="button" onClick={() => setShinyOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', shinyOnly ? 'border-amber-400/60 bg-amber-500/20 text-amber-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-                      ★ Shiny
-                    </button>
-                    <button type="button" onClick={() => setRareOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', rareOnly ? 'border-purple-400/60 bg-purple-500/20 text-purple-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-                      Legendary/Mythical
-                    </button>
-                    <button type="button" onClick={() => setFlaggedOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', flaggedOnly ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-                      Flagged
-                    </button>
-                    <button type="button" onClick={() => setHideCaught((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', hideCaught ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
-                      Hide Caught
-                    </button>
-                    <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300 outline-none focus:border-cyan-400">
-                      <option value="">All types</option>
-                      {ALL_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-        <span className="ml-auto text-slate-500">
-          {entries.length > 0 && `${new Set(entries.map((e) => e.pokemon_id)).size}/${baseTiles.length || '…'} caught`}
-        </span>
-      </div>
-
-      {overCapacity && (
-        <div className="warning-pulse rounded-lg border border-red-500 bg-red-950/40 p-2 text-red-300">
-          {entries.length} specimens on hand exceeds {gameTitle?.name}'s real storage capacity ({capacity}). Something's off — check for
-          duplicates or specimens that should have been traded/released.
-        </div>
-      )}
-
-      {multiSelected.size > 0 && !taggingSelection && !confirmingClear && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-300">
-          <span>{multiSelected.size} species selected</span>
-          <span className="text-slate-500">Shift+drag or Shift+click to adjust · (S) shiny · (C) fainted · (H) tag · (Del) clear</span>
-          <button type="button" onClick={() => setMultiSelected(new Set())} className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60">
-            Clear selection
-          </button>
-        </div>
-      )}
-      {taggingSelection && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2">
-          <input
-            value={tagDraft}
-            onChange={(e) => setTagDraft(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void handleAddTagToSelection()}
-            autoFocus
-            placeholder={`Tag all specimens of ${multiSelected.size} species…`}
-            className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-amber-400"
-          />
-          <button type="button" onClick={() => void handleAddTagToSelection()} className="rounded border border-amber-400 px-2 py-1 text-amber-300">
-            Add
-          </button>
-          <button type="button" onClick={() => { setTaggingSelection(false); setTagDraft(''); }} className="rounded border border-slate-700 px-2 py-1 text-slate-400">
-            Cancel
-          </button>
-        </div>
-      )}
-      {confirmingClear && (
-        <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-2">
-          <p className="mb-2 text-red-300">Clear every specimen of {multiSelected.size} selected species permanently? This can be undone from Version History.</p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => void handleClearSelection()} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
-              Clear permanently
+    <div className="flex h-full gap-3 text-xs">
+      <div className={['flex h-full flex-col gap-2 overflow-hidden', drawerOpen && drawerExpanded ? 'hidden' : 'flex-1'].join(' ')}>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setOrganizeOpen((v) => !v);
+                setFilterOpen(false);
+              }}
+              className={[
+                'rounded border px-2.5 py-1 text-[10px]',
+                organizeOpen ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60',
+              ].join(' ')}
+            >
+              Organize {organizeOpen ? '▲' : '▼'}
             </button>
-            <button type="button" onClick={() => setConfirmingClear(false)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+            {organizeOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[240px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
+                <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">View</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(['national', 'regional', 'type', 'custom'] as ViewMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setViewMode(mode)}
+                      className={[
+                        'rounded border px-2 py-0.5 text-[10px] capitalize',
+                        viewMode === mode ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+                      ].join(' ')}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                  {viewMode === 'national' && (
+                    <button
+                      type="button"
+                      onClick={() => setSeparateBox((v) => !v)}
+                      className={['rounded border px-2 py-0.5 text-[10px]', separateBox ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
+                    >
+                      Separate Box
+                    </button>
+                  )}
+                </div>
+                {isCustom && <p className="mt-2 text-slate-500">Custom View is your sandbox — full reorder/rename/delete on box groups.</p>}
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setFilterOpen((v) => !v);
+                setOrganizeOpen(false);
+              }}
+              disabled={isCustom}
+              className={[
+                'rounded border px-2.5 py-1 text-[10px]',
+                filterOpen ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60 disabled:opacity-30',
+              ].join(' ')}
+            >
+              Filter {filterOpen ? '▲' : '▼'}
+            </button>
+            {filterOpen && !isCustom && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[240px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
+                <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">Filter (excludes tiles)</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => setShinyOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', shinyOnly ? 'border-amber-400/60 bg-amber-500/20 text-amber-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                    ★ Shiny
+                  </button>
+                  <button type="button" onClick={() => setRareOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', rareOnly ? 'border-purple-400/60 bg-purple-500/20 text-purple-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                    Legendary/Mythical
+                  </button>
+                  <button type="button" onClick={() => setFlaggedOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', flaggedOnly ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                    Flagged
+                  </button>
+                  <button type="button" onClick={() => setAnomalousOnly((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', anomalousOnly ? 'border-red-500/60 bg-red-500/20 text-red-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                    Anomalous
+                  </button>
+                  <button type="button" onClick={() => setHideCaught((v) => !v)} className={['rounded border px-2 py-0.5 text-[10px]', hideCaught ? 'border-cyan-400/60 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}>
+                    Hide Caught
+                  </button>
+                  <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-[10px] text-slate-300 outline-none focus:border-cyan-400">
+                    <option value="">All types</option>
+                    {ALL_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <span className="ml-auto text-slate-500">
+            {entries.length > 0 && `${new Set(entries.map((e) => e.pokemon_id)).size}/${baseTiles.length || '…'} caught`}
+          </span>
+        </div>
+
+        {overCapacity && (
+          <div className="warning-pulse rounded-lg border border-red-500 bg-red-950/40 p-2 text-red-300">
+            {entries.length} specimens on hand exceeds {gameTitle?.name}'s real storage capacity ({capacity}). Something's off — check for
+            duplicates or specimens that should have been traded/released.
+          </div>
+        )}
+
+        {multiSelected.size > 0 && !taggingSelection && !confirmingClear && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-amber-300">
+            <span>{multiSelected.size} species selected</span>
+            <button type="button" onClick={() => void handleToggleShinySelection()} className="rounded border border-amber-400/60 px-2 py-0.5 hover:bg-amber-500/20">
+              Toggle Shiny
+            </button>
+            <button type="button" onClick={() => void handleToggleFaintedSelection()} className="rounded border border-amber-400/60 px-2 py-0.5 hover:bg-amber-500/20">
+              Toggle Fainted
+            </button>
+            <button type="button" onClick={() => setTaggingSelection(true)} className="rounded border border-amber-400/60 px-2 py-0.5 hover:bg-amber-500/20">
+              Add Tag…
+            </button>
+            <button type="button" onClick={() => setConfirmingClear(true)} className="rounded border border-red-400/60 px-2 py-0.5 text-red-300 hover:bg-red-500/20">
+              Clear…
+            </button>
+            <button type="button" onClick={() => setMultiSelected(new Set())} className="ml-auto rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60">
+              Deselect
+            </button>
+          </div>
+        )}
+        {taggingSelection && (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2">
+            <input
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && void handleAddTagToSelection()}
+              autoFocus
+              placeholder={`Tag all specimens of ${multiSelected.size} species…`}
+              className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-amber-400"
+            />
+            <button type="button" onClick={() => void handleAddTagToSelection()} className="rounded border border-amber-400 px-2 py-1 text-amber-300">
+              Add
+            </button>
+            <button type="button" onClick={() => { setTaggingSelection(false); setTagDraft(''); }} className="rounded border border-slate-700 px-2 py-1 text-slate-400">
               Cancel
             </button>
           </div>
-        </div>
-      )}
+        )}
+        {confirmingClear && (
+          <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-2">
+            <p className="mb-2 text-red-300">Clear every specimen of {multiSelected.size} selected species permanently? This can be undone from Version History.</p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void handleClearSelection()} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
+                Clear permanently
+              </button>
+              <button type="button" onClick={() => setConfirmingClear(false)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
-      <div ref={gridRef} onMouseDown={handleGridMouseDown} className="flex-1 select-none overflow-y-auto">
-        <div className="flex flex-wrap gap-3">
-          {viewMode === 'type'
-            ? typeGroups.map((group) => (
-                <div key={group.type}>
-                  <p className="mb-1 font-retro text-[9px] capitalize text-slate-300">{group.type}</p>
-                  <div
-                    className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5"
-                    style={{ gridTemplateColumns: `repeat(${boxWidth}, ${TILE_PX}px)` }}
-                  >
-                    {group.tiles.map((tile) => renderTile(tile))}
-                  </div>
-                </div>
-              ))
-            : boxGroups.map((group) => {
-                const range = dexRangeLabel(group.tiles);
-                const ownedCount = group.tiles.filter((t) => t && ownedByPokemonId.has(t.pokemonId)).length;
-                return (
-                  <div key={group.boxNumber}>
-                    <div className="mb-1 flex items-center gap-2">
-                      {editingBoxNumber === group.boxNumber ? (
-                        <>
-                          <input
-                            value={boxLabelDraft}
-                            onChange={(e) => setBoxLabelDraft(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && void saveBoxLabel()}
-                            autoFocus
-                            className="w-32 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
-                          />
-                          <button type="button" onClick={() => void saveBoxLabel()} className="text-cyan-300">✓</button>
-                        </>
-                      ) : (
-                        <button type="button" onClick={() => startEditBoxLabel(group)} className="font-retro text-[9px] text-slate-300 hover:text-cyan-300">
-                          {group.label} {!isCustom && range && <span className="text-slate-500">{range}</span>} <span className="text-slate-500">({ownedCount}/{group.tiles.length})</span>
-                        </button>
-                      )}
-                      {isCustom && (
-                        <div className="ml-auto flex items-center gap-1.5 text-slate-500">
-                          <button type="button" disabled={group.boxNumber === 1} onClick={() => void moveBoxGroup(group.boxNumber, 'up')} className="hover:text-cyan-300 disabled:opacity-20">◀</button>
-                          <button type="button" disabled={group.boxNumber === boxGroups.length} onClick={() => void moveBoxGroup(group.boxNumber, 'down')} className="hover:text-cyan-300 disabled:opacity-20">▶</button>
-                          <button type="button" onClick={() => setConfirmingDeleteBox(group.boxNumber)} className="text-[10px] hover:text-red-400">Delete…</button>
-                        </div>
-                      )}
-                    </div>
-
-                    {confirmingDeleteBox === group.boxNumber && (
-                      <div className="mb-1 w-max min-w-[260px] rounded-lg border border-red-900/50 bg-red-950/30 p-2">
-                        <p className="mb-2 text-red-300">Migrate this box's specimens to the end of Custom order, or delete them permanently?</p>
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'migrate')} className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30">
-                            Migrate & delete box
-                          </button>
-                          <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'delete')} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
-                            Delete permanently
-                          </button>
-                          <button type="button" onClick={() => setConfirmingDeleteBox(null)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
+        <div ref={gridRef} onMouseDown={handleGridMouseDown} className="flex-1 select-none overflow-y-auto">
+          <div className="flex flex-wrap gap-3">
+            {viewMode === 'type'
+              ? typeGroups.map((group) => (
+                  <div key={group.type}>
+                    <p className="mb-1 font-retro text-[9px] capitalize text-slate-300">{group.type}</p>
                     <div
                       className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5"
                       style={{ gridTemplateColumns: `repeat(${boxWidth}, ${TILE_PX}px)` }}
                     >
-                      {group.tiles.map((tile, i) =>
-                        tile ? (
-                          renderTile(tile)
-                        ) : (
-                          <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" />
-                        ),
-                      )}
+                      {group.tiles.map((tile) => renderTile(tile))}
                     </div>
                   </div>
-                );
-              })}
+                ))
+              : boxGroups.map((group) => {
+                  const range = dexRangeLabel(group.tiles);
+                  const ownedCount = group.tiles.filter((t) => t && ownedByPokemonId.has(t.pokemonId)).length;
+                  return (
+                    <div key={group.boxNumber}>
+                      <div className="mb-1 flex items-center gap-2">
+                        {editingBoxNumber === group.boxNumber ? (
+                          <>
+                            <input
+                              value={boxLabelDraft}
+                              onChange={(e) => setBoxLabelDraft(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && void saveBoxLabel()}
+                              autoFocus
+                              className="w-32 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
+                            />
+                            <button type="button" onClick={() => void saveBoxLabel()} className="text-cyan-300">✓</button>
+                          </>
+                        ) : (
+                          <button type="button" onClick={() => startEditBoxLabel(group)} className="font-retro text-[9px] text-slate-300 hover:text-cyan-300">
+                            {group.label} {!isCustom && range && <span className="text-slate-500">{range}</span>} <span className="text-slate-500">({ownedCount}/{group.tiles.length})</span>
+                          </button>
+                        )}
+                        {isCustom && (
+                          <div className="ml-auto flex items-center gap-1.5 text-slate-500">
+                            <button type="button" disabled={group.boxNumber === 1} onClick={() => void moveBoxGroup(group.boxNumber, 'up')} className="hover:text-cyan-300 disabled:opacity-20">◀</button>
+                            <button type="button" disabled={group.boxNumber === boxGroups.length} onClick={() => void moveBoxGroup(group.boxNumber, 'down')} className="hover:text-cyan-300 disabled:opacity-20">▶</button>
+                            <button type="button" onClick={() => setConfirmingDeleteBox(group.boxNumber)} className="text-[10px] hover:text-red-400">Delete…</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {confirmingDeleteBox === group.boxNumber && (
+                        <div className="mb-1 w-max min-w-[260px] rounded-lg border border-red-900/50 bg-red-950/30 p-2">
+                          <p className="mb-2 text-red-300">Migrate this box's specimens to the end of Custom order, or delete them permanently?</p>
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'migrate')} className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30">
+                              Migrate & delete box
+                            </button>
+                            <button type="button" onClick={() => void handleDeleteBoxGroup(group, 'delete')} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
+                              Delete permanently
+                            </button>
+                            <button type="button" onClick={() => setConfirmingDeleteBox(null)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <div
+                        className="grid auto-rows-min gap-1 rounded-lg border border-slate-700 bg-slate-800/40 p-1.5"
+                        style={{ gridTemplateColumns: `repeat(${boxWidth}, ${TILE_PX}px)` }}
+                      >
+                        {group.tiles.map((tile, i) =>
+                          tile ? (
+                            renderTile(tile)
+                          ) : (
+                            <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" />
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+          </div>
         </div>
       </div>
 
-      {expandedPokemonId !== null && expandedTile && (
-        <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-2">
-          <div className="mb-1.5 flex items-center justify-between">
+      {drawerOpen && expandedTile && (
+        <div className={['flex h-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-800/60', drawerExpanded ? 'w-full' : 'w-full shrink-0 sm:w-[380px]'].join(' ')}>
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-700 p-2">
             <p className="font-retro text-[9px] text-slate-200">
-              {titleCase(expandedTile.name)} {expandedSpecies.length > 0 && <span className="text-slate-500">— {expandedSpecies.length} owned</span>}
+              {selected ? selected.species : titleCase(expandedTile.name)}
+              {!selected && expandedSpecies.length > 0 && <span className="text-slate-500"> — {expandedSpecies.length} owned</span>}
             </p>
             <div className="flex items-center gap-2">
-              {isCustom && expandedSpecies.length > 0 && (
+              {selected && (
+                <button type="button" onClick={() => setSelectedUuid(null)} className="text-[10px] text-slate-400 hover:text-slate-200">
+                  ← back
+                </button>
+              )}
+              {isCustom && !selected && expandedSpecies.length > 0 && (
                 <span className="flex flex-col text-slate-500">
-                  <button type="button" onClick={() => void reorderSpecies(expandedPokemonId, 'up')} className="hover:text-cyan-300">▲</button>
-                  <button type="button" onClick={() => void reorderSpecies(expandedPokemonId, 'down')} className="hover:text-cyan-300">▼</button>
+                  <button type="button" onClick={() => void reorderSpecies(expandedPokemonId!, 'up')} className="hover:text-cyan-300">▲</button>
+                  <button type="button" onClick={() => void reorderSpecies(expandedPokemonId!, 'down')} className="hover:text-cyan-300">▼</button>
                 </span>
               )}
-              <button type="button" onClick={() => setExpandedPokemonId(null)} className="text-[10px] text-slate-400 hover:text-slate-200">
-                close
+              <button type="button" onClick={() => setDrawerExpanded((v) => !v)} title={drawerExpanded ? 'Shrink' : 'Expand to full page'} className="text-[10px] text-slate-400 hover:text-cyan-300">
+                {drawerExpanded ? '⤡ shrink' : '⤢ expand'}
+              </button>
+              <button type="button" onClick={closeDrawer} className="text-[10px] text-slate-400 hover:text-slate-200">
+                ✕
               </button>
             </div>
           </div>
-          {expandedSpecies.length > 0 ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {expandedSpecies.map((e) => (
-                <li key={e.uuid}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedUuid(e.uuid)}
-                    className={['flex flex-col items-center rounded border p-1', selectedUuid === e.uuid ? 'border-cyan-400 bg-slate-900/80' : 'border-slate-700 bg-slate-900/50 hover:border-slate-500'].join(' ')}
-                  >
-                    <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
-                    <span className="text-[8px] text-slate-400">
-                      {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <SpeciesReference species={titleCase(expandedTile.name)} />
-          )}
+          <div className="flex-1 overflow-y-auto p-2">
+            {selected ? (
+              <InfoPanel entry={selected} nuzlocke={nuzlocke} onClose={() => setSelectedUuid(null)} />
+            ) : expandedSpecies.length > 0 ? (
+              <ul className="flex flex-wrap gap-1.5">
+                {expandedSpecies.map((e) => (
+                  <li key={e.uuid}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedUuid(e.uuid)}
+                      className="flex flex-col items-center rounded border border-slate-700 bg-slate-900/50 p-1 hover:border-slate-500"
+                    >
+                      <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
+                      <span className="text-[8px] text-slate-400">
+                        {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
+                        {e.is_sandbox_anomalous && <span className="text-red-400"> ⚠</span>}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <SpeciesReference species={titleCase(expandedTile.name)} />
+            )}
+          </div>
         </div>
       )}
-
-      {selected && <InfoPanel entry={selected} nuzlocke={nuzlocke} onClose={() => setSelectedUuid(null)} />}
     </div>
   );
 }

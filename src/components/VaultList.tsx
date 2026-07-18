@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
-import { setNuzlockeMode, declareVictory } from '../services/nuzlocke';
+import { declareVictory } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { SpeciesGrid } from './SpeciesGrid';
 import { QueryBar } from './QueryBar';
@@ -19,7 +19,7 @@ import { resolveOriginTitles } from '../services/originBadges';
  * component owns the surrounding Nuzlocke controls, search, and Graveyard.
  */
 export function VaultList() {
-  const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready, bootstrapError, retry } = useActiveGameInstance();
+  const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, bootstrapError, retry } = useActiveGameInstance();
   const gameTitle = useLiveQuery(
     () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
     [gameInstance],
@@ -56,11 +56,6 @@ export function VaultList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allActive, query, originTitles]);
 
-  async function toggleNuzlocke() {
-    if (!gameInstanceId) return;
-    await setNuzlockeMode(gameInstanceId, !nuzlocke);
-  }
-
   async function handleDeclareVictory() {
     if (!gameInstanceId) return;
     await declareVictory(gameInstanceId);
@@ -84,23 +79,6 @@ export function VaultList() {
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
-      <div className="flex items-center justify-between">
-        {gameTitle && <p className="text-[10px] text-slate-500">Save: {gameTitle.name}</p>}
-        <button
-          disabled={!ready}
-          type="button"
-          onClick={() => void toggleNuzlocke()}
-          className={[
-            'rounded-md border px-2.5 py-1 text-[10px]',
-            nuzlocke
-              ? 'border-red-500/50 bg-red-500/20 text-red-300'
-              : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-          ].join(' ')}
-        >
-          Nuzlocke Mode: {nuzlocke ? 'ON' : 'OFF'}
-        </button>
-      </div>
-
       {nuzlocke && !gameInstance?.is_victory && !confirmingVictory && (
         <button
           type="button"
