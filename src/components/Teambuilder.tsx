@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Generations } from '@smogon/calc';
 import { db, type Team, type TeamSlot } from '../db/schema';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { SpeciesPicker } from './SpeciesPicker';
 import {
   deleteTeam,
   emptySlot,
@@ -57,11 +58,13 @@ export function Teambuilder() {
   const [message, setMessage] = useState<string | null>(null);
 
   async function refreshTeams() {
-    setSavedTeams(await listTeams());
+    if (!gameInstanceId) return;
+    setSavedTeams(await listTeams(gameInstanceId));
   }
   useEffect(() => {
     void refreshTeams();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameInstanceId]);
 
   function updateSlot(index: number, patch: Partial<TeamSlot>) {
     setSlots((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -83,7 +86,8 @@ export function Teambuilder() {
   }
 
   async function handleSave() {
-    const id = await saveTeam(teamName, slots, currentTeamId);
+    if (!gameInstanceId) return;
+    const id = await saveTeam(gameInstanceId, teamName, slots, currentTeamId);
     setCurrentTeamId(id);
     await refreshTeams();
     setMessage(`Saved "${teamName}".`);
@@ -177,18 +181,15 @@ export function Teambuilder() {
       </div>
 
       <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-2">
-        <select
-          value={selected.species || ''}
-          onChange={(e) => updateSlot(selectedIndex, { species: e.target.value })}
-          className="mb-2 w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
-        >
-          <option value="">(empty slot)</option>
-          {ALL_SPECIES.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+        <div className="mb-2">
+          <SpeciesPicker
+            instanceId={`team-slot-${selectedIndex}`}
+            value={selected.species}
+            onChange={(name) => updateSlot(selectedIndex, { species: name })}
+            options={ALL_SPECIES}
+            placeholder="(empty slot)"
+          />
+        </div>
 
         {selected.species && ownedSpecies.has(selected.species) && (
           <p className="mb-2 text-emerald-400">You already own a {selected.species} in your Vault.</p>

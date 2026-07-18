@@ -129,6 +129,7 @@ export async function commitImport(gameInstanceId: string, preview: ImportPrevie
         moves: [],
         held_item: null,
         ball: row.ball || null,
+        origin_pokemon_go: false,
         tags: [...row.tags, 'smart-import'],
         reservation_status: { is_reserved: false, target_evolution_id: null },
         breeding_project_lock: { is_locked: false, notes: null },

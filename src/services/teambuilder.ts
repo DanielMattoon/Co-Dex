@@ -16,17 +16,20 @@ export function emptySlot(species: string): TeamSlot {
   };
 }
 
-export async function listTeams(): Promise<Team[]> {
-  return db.teams.orderBy('created_date').reverse().toArray();
+/** Teams belong to a save (PRD 5) — switching the active Dex switches which teams show, same as Map. */
+export async function listTeams(gameInstanceId: string): Promise<Team[]> {
+  const teams = await db.teams.where('game_instance_id').equals(gameInstanceId).toArray();
+  return teams.sort((a, b) => b.created_date.localeCompare(a.created_date));
 }
 
-export async function saveTeam(name: string, slots: TeamSlot[], existingId?: string): Promise<string> {
+export async function saveTeam(gameInstanceId: string, name: string, slots: TeamSlot[], existingId?: string): Promise<string> {
   const now = new Date().toISOString();
   const teamId = existingId ?? crypto.randomUUID();
   await recordSnapshot('team_save', `Saved team "${name}"`);
   await db.teams.put({
     team_id: teamId,
     name,
+    game_instance_id: gameInstanceId,
     slots,
     created_date: existingId ? (await db.teams.get(existingId))?.created_date ?? now : now,
     updated_date: now,

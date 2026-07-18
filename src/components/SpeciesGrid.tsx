@@ -15,6 +15,7 @@ import {
 } from '../services/boxes';
 import { InfoPanel } from './InfoPanel';
 import { SpeciesReference } from './SpeciesReference';
+import { useClickOutside } from '../hooks/useClickOutside';
 
 const GEN = Generations.get(9);
 const ALL_TYPES = [...GEN.types].map((t) => t.name).filter((t) => t !== '???');
@@ -151,10 +152,16 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const capacity = gameTitle ? gameTitle.box_count * gameTitle.boxes_slots : 0;
   const overCapacity = capacity > 0 && entries.length > capacity;
 
+  // National/Type/Custom View are accurate to the active game: a title only
+  // "knows about" species that existed by its own generation (Regional View
+  // is already game-specific by construction; Pokémon HOME's generation
+  // sentinel never excludes anything, so it alone shows the full roster).
   const baseTiles: Tile[] = useMemo(() => {
     if (viewMode === 'regional' && regionalDex.length > 0) return regionalDex;
-    return nationalSpecies.map((s) => ({ pokemonId: s.pokemonId, name: s.name }));
-  }, [viewMode, regionalDex, nationalSpecies]);
+    const all = nationalSpecies.map((s) => ({ pokemonId: s.pokemonId, name: s.name }));
+    if (!gameTitle) return all;
+    return all.filter((t) => getGeneration(t.pokemonId) <= gameTitle.generation);
+  }, [viewMode, regionalDex, nationalSpecies, gameTitle]);
 
   const ownedByPokemonId = useMemo(() => {
     const map = new Map<number, VaultEntry[]>();
@@ -505,11 +512,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     );
   }
 
+  useClickOutside(organizeOpen, 'data-organize-dropdown', () => setOrganizeOpen(false));
+  useClickOutside(filterOpen, 'data-filter-dropdown', () => setFilterOpen(false));
+
   return (
     <div className="flex h-full gap-3 text-xs">
       <div className={['flex h-full flex-col gap-2 overflow-hidden', drawerOpen && drawerExpanded ? 'hidden' : 'flex-1'].join(' ')}>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
+          <div className="relative" data-organize-dropdown>
             <button
               type="button"
               onClick={() => {
@@ -555,7 +565,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             )}
           </div>
 
-          <div className="relative">
+          <div className="relative" data-filter-dropdown>
             <button
               type="button"
               onClick={() => {

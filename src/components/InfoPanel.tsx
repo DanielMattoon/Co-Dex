@@ -5,7 +5,7 @@ import { db, type VaultEntry } from '../db/schema';
 import { getSpriteUrl, getEvolutionChain, getLevelUpMoves, type EvolutionChainData, type LevelUpMove } from '../services/pokeapi';
 import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
-import { checkTransferLegality, executeTransfer } from '../services/transfer';
+import { checkTransferLegality, executeTransfer, type LegalityCheck } from '../services/transfer';
 import { StatBar } from './StatBar';
 
 const GEN = Generations.get(9);
@@ -66,7 +66,26 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
     const instance = otherInstances.find((i) => i.game_instance_id === transferTargetId);
     return instance ? titleById.get(instance.game_title_id) : undefined;
   })();
-  const transferCheck = transferTargetTitle ? checkTransferLegality(entry, transferTargetTitle) : null;
+
+  const [transferCheck, setTransferCheck] = useState<LegalityCheck | null>(null);
+  useEffect(() => {
+    if (!transferTargetTitle) {
+      setTransferCheck(null);
+      return;
+    }
+    let cancelled = false;
+    checkTransferLegality(entry, transferTargetTitle).then((result) => {
+      if (!cancelled) setTransferCheck(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry, transferTargetTitle]);
+
+  async function toggleGoOrigin() {
+    await recordSnapshot('go_origin', `${entry.species} ${entry.origin_pokemon_go ? 'unmarked' : 'marked'} as Pokémon GO origin`);
+    await db.vault.update(entry.uuid, { origin_pokemon_go: !entry.origin_pokemon_go });
+  }
 
   async function handleTransfer() {
     if (!transferTargetTitle) return;
@@ -197,6 +216,18 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
             Mark fainted
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => void toggleGoOrigin()}
+          className={[
+            'rounded border px-2 py-1 text-[10px]',
+            entry.origin_pokemon_go
+              ? 'border-blue-400/60 bg-blue-500/20 text-blue-300'
+              : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+          ].join(' ')}
+        >
+          {entry.origin_pokemon_go ? '📱 GO Origin' : 'Tag as GO Origin'}
+        </button>
       </div>
 
       <div className="mb-3">

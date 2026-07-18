@@ -1,25 +1,79 @@
-import { db, type GameInstance, type GameTitle } from '../db/schema';
+import { db, type GameInstance, type GameTitle, HOME_GENERATION } from '../db/schema';
 
 /** Single active-profile row (PRD schema's trainer_profile table). */
 const TRAINER_PROFILE_ID = 'default';
 
+/** Pokémon HOME is the default dex — no game-specific generation ceiling, everything HOME accepts fits. */
+export const HOME_TITLE_ID = 'home';
+
 /**
- * Static reference catalog of game titles (PRD 5) — box counts are public,
- * well-documented facts about each game's PC storage system, not extracted
- * assets (PRD 4.1). A real build sources this from a build-time ETL against
- * the pret decompilation projects; this is a small hand-typed stand-in
- * covering one title per generation.
+ * Static reference catalog of game titles (PRD 5) — every mainline release,
+ * plus Pokémon HOME as the umbrella "everything" option. Box counts/pokedex
+ * mappings are public, well-documented facts about each game's PC storage
+ * system, not extracted assets (PRD 4.1); this is a hand-typed stand-in a
+ * real build would source from a build-time ETL. Some entries (BDSP,
+ * Legends: Arceus, DLC-expanded dexes) rely on PokeAPI pokedex resources
+ * that are less certain to exist under these exact names — Regional View
+ * already falls back to National View gracefully if a lookup fails, so a
+ * wrong slug degrades rather than breaks.
  */
 const SEED_TITLES: GameTitle[] = [
-  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'] },
-  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'] },
-  { game_title_id: 'heartgold', name: 'HeartGold', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-johto'] },
-  { game_title_id: 'platinum', name: 'Platinum', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['extended-sinnoh'] },
-  { game_title_id: 'white', name: 'White', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-unova'] },
-  { game_title_id: 'y', name: 'Y', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kalos-central', 'kalos-coastal', 'kalos-mountain'] },
-  { game_title_id: 'sun', name: 'Sun', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-alola'] },
-  { game_title_id: 'sword', name: 'Sword', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['galar'] },
-  { game_title_id: 'scarlet', name: 'Scarlet', generation: 9, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['paldea'] },
+  { game_title_id: HOME_TITLE_ID, name: 'Pokémon HOME', generation: HOME_GENERATION, box_count: 200, boxes_slots: 30, box_width: 6, pokedex_slugs: ['national'], allows_pokemon_go: true },
+
+  // Gen 1
+  { game_title_id: 'red', name: 'Red', generation: 1, box_count: 12, boxes_slots: 20, box_width: 5, pokedex_slugs: ['kanto'], allows_pokemon_go: false },
+  { game_title_id: 'blue', name: 'Blue', generation: 1, box_count: 12, boxes_slots: 20, box_width: 5, pokedex_slugs: ['kanto'], allows_pokemon_go: false },
+  { game_title_id: 'yellow', name: 'Yellow', generation: 1, box_count: 12, boxes_slots: 20, box_width: 5, pokedex_slugs: ['kanto'], allows_pokemon_go: false },
+
+  // Gen 2
+  { game_title_id: 'gold', name: 'Gold', generation: 2, box_count: 14, boxes_slots: 20, box_width: 5, pokedex_slugs: ['original-johto'], allows_pokemon_go: false },
+  { game_title_id: 'silver', name: 'Silver', generation: 2, box_count: 14, boxes_slots: 20, box_width: 5, pokedex_slugs: ['original-johto'], allows_pokemon_go: false },
+  { game_title_id: 'crystal', name: 'Crystal', generation: 2, box_count: 14, boxes_slots: 20, box_width: 5, pokedex_slugs: ['original-johto'], allows_pokemon_go: false },
+
+  // Gen 3
+  { game_title_id: 'ruby', name: 'Ruby', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false },
+  { game_title_id: 'sapphire', name: 'Sapphire', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false },
+  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false },
+  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false },
+  { game_title_id: 'leafgreen', name: 'LeafGreen', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false },
+
+  // Gen 4
+  { game_title_id: 'diamond', name: 'Diamond', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-sinnoh'], allows_pokemon_go: false },
+  { game_title_id: 'pearl', name: 'Pearl', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-sinnoh'], allows_pokemon_go: false },
+  { game_title_id: 'platinum', name: 'Platinum', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['extended-sinnoh'], allows_pokemon_go: false },
+  { game_title_id: 'heartgold', name: 'HeartGold', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-johto'], allows_pokemon_go: false },
+  { game_title_id: 'soulsilver', name: 'SoulSilver', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-johto'], allows_pokemon_go: false },
+
+  // Gen 5
+  { game_title_id: 'black', name: 'Black', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-unova'], allows_pokemon_go: false },
+  { game_title_id: 'white', name: 'White', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-unova'], allows_pokemon_go: false },
+  { game_title_id: 'black2', name: 'Black 2', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-unova'], allows_pokemon_go: false },
+  { game_title_id: 'white2', name: 'White 2', generation: 5, box_count: 24, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-unova'], allows_pokemon_go: false },
+
+  // Gen 6
+  { game_title_id: 'x', name: 'X', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kalos-central', 'kalos-coastal', 'kalos-mountain'], allows_pokemon_go: false },
+  { game_title_id: 'y', name: 'Y', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kalos-central', 'kalos-coastal', 'kalos-mountain'], allows_pokemon_go: false },
+  { game_title_id: 'omegaruby', name: 'Omega Ruby', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-hoenn'], allows_pokemon_go: false },
+  { game_title_id: 'alphasapphire', name: 'Alpha Sapphire', generation: 6, box_count: 31, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-hoenn'], allows_pokemon_go: false },
+
+  // Gen 7
+  { game_title_id: 'sun', name: 'Sun', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-alola'], allows_pokemon_go: false },
+  { game_title_id: 'moon', name: 'Moon', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-alola'], allows_pokemon_go: false },
+  { game_title_id: 'ultrasun', name: 'Ultra Sun', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-alola'], allows_pokemon_go: false },
+  { game_title_id: 'ultramoon', name: 'Ultra Moon', generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['updated-alola'], allows_pokemon_go: false },
+  { game_title_id: 'letsgopikachu', name: "Let's Go, Pikachu!", generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['letsgo-kanto'], allows_pokemon_go: true },
+  { game_title_id: 'letsgoeevee', name: "Let's Go, Eevee!", generation: 7, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['letsgo-kanto'], allows_pokemon_go: true },
+
+  // Gen 8
+  { game_title_id: 'sword', name: 'Sword', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['galar', 'isle-of-armor', 'crown-tundra'], allows_pokemon_go: false },
+  { game_title_id: 'shield', name: 'Shield', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['galar', 'isle-of-armor', 'crown-tundra'], allows_pokemon_go: false },
+  { game_title_id: 'brilliantdiamond', name: 'Brilliant Diamond', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-sinnoh'], allows_pokemon_go: false },
+  { game_title_id: 'shiningpearl', name: 'Shining Pearl', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-sinnoh'], allows_pokemon_go: false },
+  { game_title_id: 'legendsarceus', name: 'Legends: Arceus', generation: 8, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hisui'], allows_pokemon_go: false },
+
+  // Gen 9
+  { game_title_id: 'scarlet', name: 'Scarlet', generation: 9, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['paldea', 'kitakami', 'blueberry'], allows_pokemon_go: false },
+  { game_title_id: 'violet', name: 'Violet', generation: 9, box_count: 32, boxes_slots: 30, box_width: 6, pokedex_slugs: ['paldea', 'kitakami', 'blueberry'], allows_pokemon_go: false },
 ];
 
 export async function ensureSeedTitles(): Promise<void> {
@@ -69,7 +123,7 @@ export async function getActiveGameInstanceId(): Promise<string> {
       await setActiveGameInstance(existing[0].game_instance_id);
       return existing[0].game_instance_id;
     }
-    return createGameInstance(SEED_TITLES[0].game_title_id, false);
+    return createGameInstance(HOME_TITLE_ID, false);
   });
 }
 

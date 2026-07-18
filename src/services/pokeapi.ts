@@ -134,6 +134,39 @@ export async function getRegionalDex(slugs: string[] | undefined): Promise<Regio
   return entries;
 }
 
+// --- Move generations (Transfer Engine move legality, Move Library) ---
+
+interface RawGenerationMovesResponse {
+  moves: { name: string }[];
+}
+
+let moveGenerationCache: Map<string, number> | null = null;
+let moveGenerationInflight: Promise<Map<string, number>> | null = null;
+
+/**
+ * Every move's introduction generation, built from the 9 /generation/{n}
+ * resources (each lists every move that generation introduced) rather than
+ * one fetch per move (~900+ calls) — a move's generation is intrinsic to
+ * the move itself, so this is exact, not an approximation like the shiny
+ * chain-method odds.
+ */
+export async function getMoveGenerationMap(): Promise<Map<string, number>> {
+  if (moveGenerationCache) return moveGenerationCache;
+  if (!moveGenerationInflight) {
+    moveGenerationInflight = Promise.all(
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => cachedFetch<RawGenerationMovesResponse>(`${BASE}/generation/${g}`)),
+    ).then((results) => {
+      const map = new Map<string, number>();
+      results.forEach((data, i) => {
+        for (const m of data.moves) map.set(m.name, i + 1);
+      });
+      moveGenerationCache = map;
+      return map;
+    });
+  }
+  return moveGenerationInflight;
+}
+
 // --- Item Dex (PRD 6.15) ---
 
 export interface ItemSummary {

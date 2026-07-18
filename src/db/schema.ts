@@ -3,6 +3,13 @@ import Dexie, { type EntityTable } from 'dexie';
 export interface GameTitle {
   game_title_id: string;
   name: string;
+  /**
+   * Highest National Dex generation this title's world recognizes — species
+   * released after this generation didn't exist yet when this game shipped,
+   * so National View excludes them and the Transfer Engine blocks moving
+   * them in. Pokémon HOME (the default dex, no single generation cutoff)
+   * uses HOME_GENERATION, a sentinel high enough to never exclude anything.
+   */
   generation: number;
   box_count: number;
   boxes_slots: number;
@@ -14,7 +21,12 @@ export interface GameTitle {
    * mountain). Drives the Living Dex's Regional View (PRD 6.8).
    */
   pokedex_slugs: string[];
+  /** True only for titles that can receive a Pokémon GO transfer directly (Let's Go Pikachu/Eevee, HOME). */
+  allows_pokemon_go: boolean;
 }
+
+/** Pokémon HOME has no real generation ceiling — every species released so far fits. */
+export const HOME_GENERATION = 9999;
 
 export interface GameInstance {
   game_instance_id: string;
@@ -91,6 +103,8 @@ export interface VaultEntry {
   tags: string[];
   /** Poké Ball type, freeform (Smart-Map Importer/query grammar `ball:"X"`, PRD 15.1, 15.3). */
   ball: string | null;
+  /** True if this specimen's origin is Pokémon GO — GO-origin specimens can only transfer directly to a title with allows_pokemon_go. */
+  origin_pokemon_go: boolean;
   reservation_status: ReservationStatus;
   breeding_project_lock: BreedingProjectLock;
   history_log: HistoryLogEntry[];
@@ -192,6 +206,8 @@ export interface TeamSlot {
 export interface Team {
   team_id: string;
   name: string;
+  /** Teams belong to a save now — switching the active Dex switches Team too, same as Map. */
+  game_instance_id: string;
   slots: TeamSlot[];
   created_date: string;
   updated_date: string;
@@ -255,4 +271,8 @@ db.version(5).stores({
 
 db.version(6).stores({
   shiny_hunt_log: 'id, pokemon_id, timestamp',
+});
+
+db.version(7).stores({
+  teams: 'team_id, created_date, game_instance_id',
 });

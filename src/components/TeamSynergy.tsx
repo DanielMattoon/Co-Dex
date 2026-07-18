@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Team } from '../db/schema';
 import { listTeams } from '../services/teambuilder';
 import { analyzeTeamSynergy, type SynergyReport } from '../services/synergyAnalysis';
+import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
 const CATEGORY_COLOR: Record<string, string> = {
   weak: 'text-red-400',
@@ -19,16 +20,18 @@ function formatMultiplier(multiplier: number, category: string): string {
 }
 
 export function TeamSynergy() {
+  const { gameInstanceId } = useActiveGameInstance();
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [report, setReport] = useState<SynergyReport | null>(null);
 
   useEffect(() => {
-    listTeams().then((t) => {
+    if (!gameInstanceId) return;
+    listTeams(gameInstanceId).then((t) => {
       setTeams(t);
       if (t.length > 0) setSelectedId(t[0].team_id);
     });
-  }, []);
+  }, [gameInstanceId]);
 
   useEffect(() => {
     const team = teams.find((t) => t.team_id === selectedId);

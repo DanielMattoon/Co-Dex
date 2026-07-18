@@ -7,14 +7,16 @@ import { ItemDex } from '../components/ItemDex';
 import { PokedexScreen } from '../components/PokedexScreen';
 import { TypeDex } from '../components/TypeDex';
 import { ShinyHuntWidget } from '../components/ShinyHuntWidget';
+import { MoveLibrary } from '../components/MoveLibrary';
 
-type Tab = 'vault' | 'pokedex' | 'types' | 'items' | 'shinyhunt';
+type Tab = 'vault' | 'pokedex' | 'types' | 'items' | 'moves' | 'shinyhunt';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'vault', label: 'Living Dex' },
   { id: 'pokedex', label: 'Pokédex (Reference)' },
   { id: 'types', label: 'Types' },
   { id: 'items', label: 'Items' },
+  { id: 'moves', label: 'Moves' },
   { id: 'shinyhunt', label: 'Shiny Hunt' },
 ];
 
@@ -51,6 +53,7 @@ export function VaultScreen() {
         {tab === 'pokedex' && <PokedexScreen caughtPokemonIds={caughtPokemonIds} />}
         {tab === 'types' && <TypeDex />}
         {tab === 'items' && <ItemDex />}
+        {tab === 'moves' && <MoveLibrary />}
         {tab === 'shinyhunt' && <ShinyHuntWidget />}
       </div>
     </div>

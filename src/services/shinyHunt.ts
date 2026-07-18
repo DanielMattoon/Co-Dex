@@ -41,6 +41,7 @@ export async function catchFromHunt(
       moves: [],
       held_item: null,
       ball: null,
+      origin_pokemon_go: false,
       tags: ['shiny-hunt'],
       reservation_status: { is_reserved: false, target_evolution_id: null },
       breeding_project_lock: { is_locked: false, notes: null },
