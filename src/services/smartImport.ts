@@ -38,7 +38,21 @@ export interface ImportPreviewRow {
 /** Resolves each row against the mapping and the live species list, without writing anything yet. */
 export async function buildPreview(rows: string[][], mapping: ColumnMapping): Promise<ImportPreviewRow[]> {
   const species = await listAllSpeciesWithIds().catch(() => []);
-  const byName = new Map(species.map((s) => [s.name.replace(/-/g, ' '), s.pokemonId]));
+
+  // PokéAPI slugs are punctuation-free ("mr-mime", "farfetchd", "type-null"),
+  // but real spreadsheet cells use natural display names ("Mr. Mime",
+  // "Farfetch'd", "Type: Null") — normalize both sides the same way so
+  // punctuation doesn't cause an otherwise-correct name to go unmatched.
+  function normalize(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/-/g, ' ')
+      .replace(/[.''’:]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  const byName = new Map(species.map((s) => [normalize(s.name), s.pokemonId]));
   const byId = new Map(species.map((s) => [s.pokemonId, s.name]));
 
   function titleCase(name: string): string {
@@ -57,11 +71,11 @@ export async function buildPreview(rows: string[][], mapping: ColumnMapping): Pr
       }
     }
     if (pokemonId === null && mapping.species !== undefined) {
-      const raw = (row[mapping.species] ?? '').trim().toLowerCase();
+      const raw = normalize(row[mapping.species] ?? '');
       const match = byName.get(raw);
       if (match !== undefined) {
         pokemonId = match;
-        speciesName = titleCase(raw);
+        speciesName = titleCase(byId.get(match)!);
       }
     }
 
@@ -87,43 +101,45 @@ export async function commitImport(gameInstanceId: string, preview: ImportPrevie
 
   await recordSnapshot('smart_import', `Smart-Map imported ${importable.length} specimen(s)`);
 
-  let nextIndex = await getNextBoxIndex(gameInstanceId);
   const now = new Date().toISOString();
-  const occupied = new Set<number>();
+  await db.transaction('rw', db.vault, async () => {
+    let nextIndex = await getNextBoxIndex(gameInstanceId);
+    const occupied = new Set<number>();
 
-  for (const row of importable) {
-    while (occupied.has(nextIndex)) nextIndex++;
-    await db.vault.add({
-      uuid: crypto.randomUUID(),
-      species: row.species!,
-      pokemon_id: row.pokemonId!,
-      nickname: row.nickname || null,
-      level: row.level,
-      hp: 100,
-      dead: false,
-      gender: 'genderless',
-      shiny: row.shiny,
-      form: 'default',
-      catchLocation: null,
-      origin_game_instance_id: gameInstanceId,
-      current_game_instance_id: gameInstanceId,
-      box_index: nextIndex,
-      captured_date: now,
-      ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
-      evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
-      moves: [],
-      held_item: null,
-      ball: row.ball || null,
-      tags: [...row.tags, 'smart-import'],
-      reservation_status: { is_reserved: false, target_evolution_id: null },
-      breeding_project_lock: { is_locked: false, notes: null },
-      history_log: [{ timestamp: now, action: 'imported', details: 'Imported via Smart-Map Importer.' }],
-      is_sandbox_anomalous: false,
-      sort_priority: nextIndex,
-    });
-    occupied.add(nextIndex);
-    nextIndex++;
-  }
+    for (const row of importable) {
+      while (occupied.has(nextIndex)) nextIndex++;
+      await db.vault.add({
+        uuid: crypto.randomUUID(),
+        species: row.species!,
+        pokemon_id: row.pokemonId!,
+        nickname: row.nickname || null,
+        level: row.level,
+        hp: 100,
+        dead: false,
+        gender: 'genderless',
+        shiny: row.shiny,
+        form: 'default',
+        catchLocation: null,
+        origin_game_instance_id: gameInstanceId,
+        current_game_instance_id: gameInstanceId,
+        box_index: nextIndex,
+        captured_date: now,
+        ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+        evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+        moves: [],
+        held_item: null,
+        ball: row.ball || null,
+        tags: [...row.tags, 'smart-import'],
+        reservation_status: { is_reserved: false, target_evolution_id: null },
+        breeding_project_lock: { is_locked: false, notes: null },
+        history_log: [{ timestamp: now, action: 'imported', details: 'Imported via Smart-Map Importer.' }],
+        is_sandbox_anomalous: false,
+        sort_priority: nextIndex,
+      });
+      occupied.add(nextIndex);
+      nextIndex++;
+    }
+  });
 
   return { imported: importable.length, skipped: preview.length - importable.length };
 }

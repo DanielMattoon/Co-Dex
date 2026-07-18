@@ -222,6 +222,7 @@ export function BoxGrid({ entries, boxSize, boxCount, nuzlocke, gameInstanceId }
               onClick={(e) => {
                 if (!entry) return;
                 if (e.shiftKey) {
+                  setSelectedUuid(null);
                   setMultiSelected((prev) => {
                     const next = new Set(prev);
                     if (next.has(entry.uuid)) next.delete(entry.uuid);

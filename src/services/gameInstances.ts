@@ -45,19 +45,26 @@ export async function listGameInstances(): Promise<GameInstance[]> {
 }
 
 export async function getActiveGameInstanceId(): Promise<string> {
-  const profile = await db.trainer_profile.get(TRAINER_PROFILE_ID);
-  if (profile?.active_game_instance_id) {
-    const stillExists = await db.game_instances.get(profile.active_game_instance_id);
-    if (stillExists) return profile.active_game_instance_id;
-  }
+  // Everything below runs inside one transaction so two concurrent callers
+  // (e.g. two components bootstrapping on first load) can't both observe
+  // "no instance yet" and each create their own — IndexedDB serializes
+  // competing readwrite transactions on the same stores instead of
+  // interleaving them.
+  return db.transaction('rw', db.trainer_profile, db.game_instances, db.game_titles, async () => {
+    const profile = await db.trainer_profile.get(TRAINER_PROFILE_ID);
+    if (profile?.active_game_instance_id) {
+      const stillExists = await db.game_instances.get(profile.active_game_instance_id);
+      if (stillExists) return profile.active_game_instance_id;
+    }
 
-  // No active save yet — create one so every screen has somewhere to write.
-  const existing = await db.game_instances.toArray();
-  if (existing.length > 0) {
-    await setActiveGameInstance(existing[0].game_instance_id);
-    return existing[0].game_instance_id;
-  }
-  return createGameInstance(SEED_TITLES[0].game_title_id, false);
+    // No active save yet — create one so every screen has somewhere to write.
+    const existing = await db.game_instances.toArray();
+    if (existing.length > 0) {
+      await setActiveGameInstance(existing[0].game_instance_id);
+      return existing[0].game_instance_id;
+    }
+    return createGameInstance(SEED_TITLES[0].game_title_id, false);
+  });
 }
 
 /** Fetches the singleton trainer_profile row, creating it with defaults on first use. */
@@ -70,19 +77,25 @@ export async function getOrCreateTrainerProfile(): Promise<import('../db/schema'
 }
 
 export async function setActiveGameInstance(gameInstanceId: string): Promise<void> {
-  const profile = await getOrCreateTrainerProfile();
-  await db.trainer_profile.put({ ...profile, active_game_instance_id: gameInstanceId });
+  await db.transaction('rw', db.trainer_profile, async () => {
+    const profile = await getOrCreateTrainerProfile();
+    await db.trainer_profile.put({ ...profile, active_game_instance_id: gameInstanceId });
+  });
 }
 
 export async function setTrainerName(name: string): Promise<void> {
-  const profile = await getOrCreateTrainerProfile();
-  await db.trainer_profile.put({ ...profile, trainer_name: name });
+  await db.transaction('rw', db.trainer_profile, async () => {
+    const profile = await getOrCreateTrainerProfile();
+    await db.trainer_profile.put({ ...profile, trainer_name: name });
+  });
 }
 
 /** Bumped on every executed Link Cable trade (PRD 12.4 trade-count badge tiers). */
 export async function incrementTradeCount(): Promise<void> {
-  const profile = await getOrCreateTrainerProfile();
-  await db.trainer_profile.put({ ...profile, link_cable_trade_count: profile.link_cable_trade_count + 1 });
+  await db.transaction('rw', db.trainer_profile, async () => {
+    const profile = await getOrCreateTrainerProfile();
+    await db.trainer_profile.put({ ...profile, link_cable_trade_count: profile.link_cable_trade_count + 1 });
+  });
 }
 
 export async function createGameInstance(gameTitleId: string, isNuzlockeMode: boolean): Promise<string> {

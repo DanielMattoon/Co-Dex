@@ -83,6 +83,10 @@ export async function restoreSnapshot(id: number): Promise<void> {
   if (!entry?.snapshot) {
     throw new Error('This entry has been compacted into a daily summary and can no longer be restored.');
   }
+  // Snapshot the state right before the restore, same as any other mutating
+  // action — otherwise a restore couldn't itself be undone from the panel.
+  await recordSnapshot('restore', `Restored to the state from ${entry.timestamp}`);
+
   const snap = entry.snapshot;
   const tables = snapshotableTables();
   await db.transaction('rw', tables, async () => {

@@ -17,7 +17,12 @@ export interface ParsedQuery {
   freeText: string[];
 }
 
-const OPERATOR_RE = /(tag|ball|from|dex):"([^"]*)"|(tag|ball|from|dex):(\S+)/gi;
+// The unquoted alternative excludes a leading `"` (negative lookahead) so an
+// unmatched opening quote (e.g. `tag:"shiny-hunt` with no closing quote)
+// fails to match as an operator at all — falling through to the free-text
+// search below — instead of silently capturing the stray `"` into the value
+// and producing a tag that can never match anything real.
+const OPERATOR_RE = /(tag|ball|from|dex):"([^"]*)"|(tag|ball|from|dex):(?!")(\S+)/gi;
 
 export function parseQuery(raw: string): ParsedQuery {
   const parsed: ParsedQuery = { tags: [], balls: [], from: [], dex: [], freeText: [] };

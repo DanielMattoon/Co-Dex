@@ -133,7 +133,7 @@ export function MapScreen() {
       if (marker.kind === 'item') {
         itemMarkersRef.current.set(marker.id, dot);
         dot.on('click', () => {
-          void toggleItemClaimed(marker.id);
+          void toggleItemClaimedRef.current(marker.id);
         });
       } else {
         dot.on('click', () => setActivePanel({ type: 'marker', marker }));
@@ -207,6 +207,17 @@ export function MapScreen() {
       itemChecklist: nextChecklist,
     });
   }
+
+  // The map-init effect below runs once, at mount, before useActiveGameInstance's
+  // async bootstrap resolves gameInstanceId — so a click handler that closed
+  // directly over toggleItemClaimed would be permanently stuck with the
+  // gameInstanceId=null it saw at that first render. Routing every click
+  // through a ref that's kept current every render fixes that without
+  // re-running the (expensive) Leaflet init effect on every state change.
+  const toggleItemClaimedRef = useRef(toggleItemClaimed);
+  useEffect(() => {
+    toggleItemClaimedRef.current = toggleItemClaimed;
+  });
 
   return (
     <div className="flex h-full flex-col gap-2">

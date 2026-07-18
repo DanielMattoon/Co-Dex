@@ -44,18 +44,20 @@ export async function executeTradeSwap(
 ): Promise<void> {
   await recordSnapshot('trade', `Traded away a specimen, received ${receivedEntry.species}`);
 
-  await db.vault.delete(givenAwayUuid);
-
-  const boxIndex = await getNextBoxIndex(myGameInstanceId);
   const now = new Date().toISOString();
-  await db.vault.put({
-    ...receivedEntry,
-    current_game_instance_id: myGameInstanceId,
-    box_index: boxIndex,
-    history_log: [
-      ...receivedEntry.history_log,
-      { timestamp: now, action: 'traded', details: 'Received via Link Cable trade.' },
-    ],
+  await db.transaction('rw', db.vault, async () => {
+    await db.vault.delete(givenAwayUuid);
+    const boxIndex = await getNextBoxIndex(myGameInstanceId);
+    await db.vault.put({
+      ...receivedEntry,
+      current_game_instance_id: myGameInstanceId,
+      box_index: boxIndex,
+      sort_priority: boxIndex,
+      history_log: [
+        ...receivedEntry.history_log,
+        { timestamp: now, action: 'traded', details: 'Received via Link Cable trade.' },
+      ],
+    });
   });
 
   await incrementTradeCount();

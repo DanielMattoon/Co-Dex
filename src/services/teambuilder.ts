@@ -71,10 +71,13 @@ export function parseShowdownTeam(text: string): TeamSlot[] {
       species = headerLine.slice(0, atIndex).trim();
       item = headerLine.slice(atIndex + 3).trim();
     }
-    // Strip a "(Nickname) (Species)" or gender marker if present.
+    // Strip a trailing gender marker first ("Species (M)"), then treat any
+    // remaining "(...)" as a nickname wrapper ("Nickname (Species)") — doing
+    // this in the other order mistook a genderless nickname-free "(M)"/"(F)"
+    // marker for the nickname paren and overwrote species with just "M"/"F".
+    species = species.replace(/\s*\((M|F)\)\s*$/, '').trim();
     const parenMatch = species.match(/\(([^)]+)\)/);
     if (parenMatch) species = parenMatch[1].trim();
-    species = species.replace(/\s*\((M|F)\)\s*$/, '').trim();
 
     const slot = emptySlot(species);
     slot.item = item;
@@ -89,7 +92,7 @@ export function parseShowdownTeam(text: string): TeamSlot[] {
       } else if (line.startsWith('EVs:')) {
         slot.evs = parseStatLine(line.slice('EVs:'.length));
       } else if (line.startsWith('IVs:')) {
-        slot.ivs = parseStatLine(line.slice('IVs:'.length));
+        slot.ivs = parseStatLine(line.slice('IVs:'.length), 31);
       } else if (line.endsWith('Nature')) {
         slot.nature = line.replace('Nature', '').trim();
       } else if (line.startsWith('-')) {
@@ -110,8 +113,13 @@ const STAT_KEY_MAP: Record<string, keyof typeof ZERO_STATS> = {
   Spe: 'spe',
 };
 
-function parseStatLine(raw: string): typeof ZERO_STATS {
-  const stats = { ...ZERO_STATS };
+/**
+ * Showdown's export convention prints only stats that deviate from the
+ * format's default — 0 for EVs, 31 for IVs — so an unlisted stat must fall
+ * back to that default, not always 0.
+ */
+function parseStatLine(raw: string, defaultValue = 0): typeof ZERO_STATS {
+  const stats = { hp: defaultValue, atk: defaultValue, def: defaultValue, spa: defaultValue, spd: defaultValue, spe: defaultValue };
   for (const part of raw.split('/')) {
     const [valueStr, statAbbr] = part.trim().split(/\s+/);
     const value = Number(valueStr);

@@ -29,9 +29,13 @@ export function ProfileScreen() {
   const [editingName, setEditingName] = useState(false);
 
   useEffect(() => {
+    // Depend on the array references, not their lengths — useLiveQuery hands
+    // back a new array whenever any watched row changes, including
+    // field-only edits (e.g. toggling a specimen's shiny flag) that don't
+    // change the row count but do change badge progress.
     computeBadges().then(setBadges).catch(() => setBadges([]));
     getWantsAndNeeds().then(setWants).catch(() => setWants({ missingSpecies: [], missingGames: [] }));
-  }, [allVault.length, allCopies.length, instances.length]);
+  }, [allVault, allCopies, instances]);
 
   useEffect(() => {
     if (profile) setNameDraft(profile.trainer_name);

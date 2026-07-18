@@ -13,12 +13,23 @@ const TRAINER_PROFILE_ID = 'default';
  */
 export function useActiveGameInstance() {
   const [bootstrapped, setBootstrapped] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   useEffect(() => {
+    setBootstrapError(null);
     getActiveGameInstanceId()
       .then(() => setBootstrapped(true))
-      .catch((e) => console.error('[useActiveGameInstance] bootstrap failed', e));
-  }, []);
+      .catch((e) => {
+        // Previously this just logged and left `ready` permanently false
+        // with no way to recover short of a full reload. Surfacing the
+        // error and exposing `retry` lets a screen offer a real recovery
+        // path for a transient Dexie failure (quota, blocked upgrade,
+        // private-browsing storage restrictions).
+        console.error('[useActiveGameInstance] bootstrap failed', e);
+        setBootstrapError(e instanceof Error ? e.message : 'Failed to load your save data.');
+      });
+  }, [retryToken]);
 
   const profile = useLiveQuery(() => db.trainer_profile.get(TRAINER_PROFILE_ID), [bootstrapped]);
   const gameInstanceId = profile?.active_game_instance_id ?? null;
@@ -32,5 +43,7 @@ export function useActiveGameInstance() {
     gameInstance,
     isNuzlockeMode: gameInstance?.isNuzlockeMode ?? false,
     ready: bootstrapped && Boolean(gameInstanceId),
+    bootstrapError,
+    retry: () => setRetryToken((t) => t + 1),
   };
 }

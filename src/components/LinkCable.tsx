@@ -182,7 +182,7 @@ export function LinkCable() {
               <>
                 <button
                   type="button"
-                  onClick={() => hostBattle(peerId, lobbyFormat)}
+                  onClick={() => void hostBattle(peerId, lobbyFormat)}
                   className="rounded border border-emerald-500/50 bg-emerald-500/20 px-2 py-1 text-emerald-300 hover:bg-emerald-500/30"
                 >
                   Host Battle

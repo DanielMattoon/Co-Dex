@@ -41,56 +41,58 @@ export async function registerCatch(params: CatchParams): Promise<void> {
   const { uuid, species, pokemonId, routeId, routeLabel, gameInstanceId, level } = params;
   const now = new Date().toISOString();
   const nuzlocke = await isNuzlockeMode(gameInstanceId);
-  const boxIndex = await getNextBoxIndex(gameInstanceId);
-
-  const entry: VaultEntry = {
-    uuid,
-    species,
-    pokemon_id: pokemonId,
-    nickname: null,
-    level,
-    hp: 100,
-    dead: false,
-    gender: 'genderless',
-    shiny: false,
-    form: 'base',
-    catchLocation: routeLabel,
-    origin_game_instance_id: gameInstanceId,
-    current_game_instance_id: gameInstanceId,
-    box_index: boxIndex,
-    captured_date: now,
-    ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
-    evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
-    moves: [],
-    held_item: null,
-    ball: null,
-    tags: [],
-    reservation_status: { is_reserved: false, target_evolution_id: null },
-    breeding_project_lock: { is_locked: false, notes: null },
-    history_log: [
-      {
-        timestamp: now,
-        action: 'captured',
-        details: `Caught on ${routeLabel} at level ${level}.`,
-      },
-    ],
-    is_sandbox_anomalous: false,
-    sort_priority: boxIndex,
-  };
   await recordSnapshot('catch', `Caught ${species} on ${routeLabel}`);
-  await db.vault.put(entry);
 
-  if (nuzlocke) {
-    const progressId = `${gameInstanceId}_${routeId}`;
-    const current = await db.map_progress.get(progressId);
-    await db.map_progress.put({
-      id: progressId,
-      routeId,
-      game_instance_id: gameInstanceId,
-      firstEncounterLogged: true,
-      itemChecklist: current?.itemChecklist ?? {},
-    });
-  }
+  await db.transaction('rw', db.vault, db.map_progress, async () => {
+    const boxIndex = await getNextBoxIndex(gameInstanceId);
+    const entry: VaultEntry = {
+      uuid,
+      species,
+      pokemon_id: pokemonId,
+      nickname: null,
+      level,
+      hp: 100,
+      dead: false,
+      gender: 'genderless',
+      shiny: false,
+      form: 'base',
+      catchLocation: routeLabel,
+      origin_game_instance_id: gameInstanceId,
+      current_game_instance_id: gameInstanceId,
+      box_index: boxIndex,
+      captured_date: now,
+      ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+      evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+      moves: [],
+      held_item: null,
+      ball: null,
+      tags: [],
+      reservation_status: { is_reserved: false, target_evolution_id: null },
+      breeding_project_lock: { is_locked: false, notes: null },
+      history_log: [
+        {
+          timestamp: now,
+          action: 'captured',
+          details: `Caught on ${routeLabel} at level ${level}.`,
+        },
+      ],
+      is_sandbox_anomalous: false,
+      sort_priority: boxIndex,
+    };
+    await db.vault.put(entry);
+
+    if (nuzlocke) {
+      const progressId = `${gameInstanceId}_${routeId}`;
+      const current = await db.map_progress.get(progressId);
+      await db.map_progress.put({
+        id: progressId,
+        routeId,
+        game_instance_id: gameInstanceId,
+        firstEncounterLogged: true,
+        itemChecklist: current?.itemChecklist ?? {},
+      });
+    }
+  });
 }
 
 /** Marks a specimen fainted and moves it to the locked Graveyard box (PRD 10, rule 1). */

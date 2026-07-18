@@ -44,18 +44,31 @@ export function useWebRTC(onData?: (data: unknown) => void) {
 
   const attachConnection = useCallback(
     (conn: DataConnection) => {
+      // Superseding an already-open connection: close it instead of leaking
+      // it, and guard every handler below by identity so a late event from a
+      // connection that's since been replaced (or explicitly disconnected)
+      // can't clobber state that now belongs to a newer connection.
+      if (connRef.current && connRef.current !== conn) {
+        connRef.current.close();
+      }
       connRef.current = conn;
-      conn.on('open', () => setStatus('connected'));
+      conn.on('open', () => {
+        if (connRef.current !== conn) return;
+        setStatus('connected');
+      });
       conn.on('data', (data) => {
+        if (connRef.current !== conn) return;
         if (typeof data === 'string') appendMessage('peer', data);
         else onDataRef.current?.(data);
       });
       conn.on('close', () => {
+        if (connRef.current !== conn) return;
         setStatus('disconnected');
         setMessages([]);
         connRef.current = null;
       });
       conn.on('error', (err) => {
+        if (connRef.current !== conn) return;
         setErrorMessage(err.message);
         setStatus('error');
       });

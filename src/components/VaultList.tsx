@@ -16,7 +16,7 @@ type ViewMode = 'box' | 'list';
 
 /** PC Box / Vault (PRD 6), with Nuzlocke enforcement (PRD 10) and Breeding Project Lock (PRD 8.4). */
 export function VaultList() {
-  const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready } = useActiveGameInstance();
+  const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready, bootstrapError, retry } = useActiveGameInstance();
   const gameTitle = useLiveQuery(
     () => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined),
     [gameInstance],
@@ -37,9 +37,13 @@ export function VaultList() {
   const [originTitles, setOriginTitles] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
+    // Depend on `entries` (the useLiveQuery reference, stable unless Dexie
+    // detects a real change) rather than allActive.length — a length-only
+    // dependency misses same-count changes like a trade rewriting a
+    // specimen's origin_game_instance_id, leaving `from:` searches stale.
     resolveOriginTitles(allActive).then(setOriginTitles);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allActive.length]);
+  }, [entries]);
 
   const active = useMemo(() => {
     const trimmed = query.trim();
@@ -62,6 +66,17 @@ export function VaultList() {
 
   function rollCatchNext() {
     setCatchNext(getCatchNextTarget(caughtIds));
+  }
+
+  if (bootstrapError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-xs">
+        <p className="text-red-400">Couldn't load your save data: {bootstrapError}</p>
+        <button type="button" onClick={retry} className="rounded-md border border-cyan-500/50 bg-cyan-500/20 px-3 py-1.5 text-cyan-300">
+          Try again
+        </button>
+      </div>
+    );
   }
 
   return (

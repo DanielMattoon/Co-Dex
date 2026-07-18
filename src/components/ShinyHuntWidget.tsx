@@ -47,6 +47,7 @@ export function ShinyHuntWidget() {
   const [running, setRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [caughtMessage, setCaughtMessage] = useState<string | null>(null);
+  const [catching, setCatching] = useState(false);
   const intervalRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -89,10 +90,20 @@ export function ShinyHuntWidget() {
   }
 
   async function markCaught() {
-    if (!target || !gameInstanceId) return;
+    if (!target || !gameInstanceId || catching) return;
+    setCatching(true);
     setRunning(false);
-    await catchFromHunt(gameInstanceId, titleCase(target.name), target.pokemonId, level, encounters, perEncounter);
-    setCaughtMessage(`Shiny ${titleCase(target.name)} added to your Vault!`);
+    const caughtSpecies = titleCase(target.name);
+    try {
+      await catchFromHunt(gameInstanceId, caughtSpecies, target.pokemonId, level, encounters, perEncounter);
+      setCaughtMessage(`Shiny ${caughtSpecies} added to your Vault!`);
+      // Reset the hunt so the Caught it! button (shown while encounters > 0)
+      // disappears instead of staying clickable and re-submitting the catch.
+      setEncounters(0);
+      setElapsedSeconds(0);
+    } finally {
+      setCatching(false);
+    }
   }
 
   return (
@@ -147,7 +158,8 @@ export function ShinyHuntWidget() {
               className="rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-slate-200"
             >
               <option value="gen6plus">Gen 6+ (1/4096)</option>
-              <option value="gen1to5">Gen 1-5 (1/8192)</option>
+              <option value="gen5">Gen 5 (1/8192)</option>
+              <option value="gen4">Gen 4 (1/8192)</option>
             </select>
           </label>
           <label className="flex items-center gap-1 text-slate-300">
@@ -238,8 +250,8 @@ export function ShinyHuntWidget() {
             </label>
             <button
               type="button"
-              onClick={markCaught}
-              disabled={!gameInstanceId}
+              onClick={() => void markCaught()}
+              disabled={!gameInstanceId || catching}
               className="ml-auto rounded-md border border-amber-500/50 bg-amber-500/20 px-2.5 py-1 text-amber-300 disabled:opacity-40"
             >
               ✨ Caught it!

@@ -75,17 +75,21 @@ export async function deleteBox(
 
   if (mode === 'delete') {
     await recordSnapshot('box_delete', `Permanently deleted Box ${boxNumber} (${inBox.length} specimens)`);
-    await db.vault.bulkDelete(inBox.map((e) => e.uuid));
-    await db.box_labels.delete(boxLabelId(gameInstanceId, boxNumber));
+    await db.transaction('rw', db.vault, db.box_labels, async () => {
+      await db.vault.bulkDelete(inBox.map((e) => e.uuid));
+      await db.box_labels.delete(boxLabelId(gameInstanceId, boxNumber));
+    });
     return { migratedCount: 0, deletedCount: inBox.length };
   }
 
   await recordSnapshot('box_delete', `Migrated Box ${boxNumber} (${inBox.length} specimens) to overflow`);
-  for (const entry of inBox) {
-    const nextIndex = await getNextBoxIndex(gameInstanceId);
-    await db.vault.update(entry.uuid, { box_index: nextIndex });
-  }
-  await db.box_labels.delete(boxLabelId(gameInstanceId, boxNumber));
+  await db.transaction('rw', db.vault, db.box_labels, async () => {
+    for (const entry of inBox) {
+      const nextIndex = await getNextBoxIndex(gameInstanceId);
+      await db.vault.update(entry.uuid, { box_index: nextIndex });
+    }
+    await db.box_labels.delete(boxLabelId(gameInstanceId, boxNumber));
+  });
   return { migratedCount: inBox.length, deletedCount: 0 };
 }
 
@@ -110,5 +114,6 @@ export async function moveInCustomOrder(sortedUuids: string[], uuid: string, dir
   const before = beforeIndex >= 0 ? priorities[beforeIndex] : priorities[targetIndex] - 1;
   const after = afterIndex < priorities.length ? priorities[afterIndex] : priorities[targetIndex] + 1;
 
+  await recordSnapshot('reorder', 'Reordered a specimen in Custom View');
   await db.vault.update(uuid, { sort_priority: (before + after) / 2 });
 }

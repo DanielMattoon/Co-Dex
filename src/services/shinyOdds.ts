@@ -10,7 +10,15 @@
  * those are exposed as a manual "extra rolls" override instead.
  */
 
-export type OddsEra = 'gen6plus' | 'gen1to5';
+/**
+ * Gen 4 and Gen 5 both use the 1/8192 base rate but have different fixed
+ * Masuda Method bonuses (well-documented, not the elaborate per-game chain
+ * tables this file otherwise declines to guess at) — Gen 4 Masuda checks 4
+ * times total (~1/2048), Gen 5 checks 5 times total (~1/1638). Collapsing
+ * them into one "gen1to5" bucket silently gave Gen 5 hunters Gen-4-accurate
+ * odds, so they're kept as separate eras.
+ */
+export type OddsEra = 'gen6plus' | 'gen5' | 'gen4';
 
 export interface ShinyOddsInput {
   era: OddsEra;
@@ -22,7 +30,7 @@ export interface ShinyOddsInput {
 export function totalRolls(input: ShinyOddsInput): number {
   const base = 1;
   const charmRolls = input.era === 'gen6plus' && input.shinyCharm ? 2 : 0;
-  const masudaRolls = input.masudaMethod ? (input.era === 'gen6plus' ? 5 : 3) : 0;
+  const masudaRolls = input.masudaMethod ? (input.era === 'gen6plus' ? 5 : input.era === 'gen5' ? 4 : 3) : 0;
   return base + charmRolls + masudaRolls + Math.max(0, input.manualBonusRolls);
 }
 

@@ -40,7 +40,7 @@ export function useNostrLobby() {
     };
   }, []);
 
-  const hostBattle = useCallback((peerId: string, format: string) => {
+  const hostBattle = useCallback(async (peerId: string, format: string) => {
     if (!poolRef.current || !secretKeyRef.current) return;
     setError(null);
     try {
@@ -53,10 +53,13 @@ export function useNostrLobby() {
         },
         secretKeyRef.current,
       );
-      poolRef.current.publish(RELAYS, event);
+      // publish() returns one promise per relay — only report "hosting" once
+      // at least one relay actually accepted the event, instead of assuming
+      // success the instant the publish call is fired off.
+      await Promise.any(poolRef.current.publish(RELAYS, event));
       setHosting(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to publish lobby offer');
+    } catch {
+      setError('Could not reach any relay to host the lobby — check your connection and try again.');
     }
   }, []);
 

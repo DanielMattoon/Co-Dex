@@ -29,6 +29,7 @@ export function ItemDex() {
   useEffect(() => {
     if (!selected) return;
     setDetail(null);
+    setError(null);
     getItemDetail(selected)
       .then(setDetail)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load item'));
