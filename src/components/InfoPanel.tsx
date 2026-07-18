@@ -6,6 +6,7 @@ import { getSpriteUrl, getEvolutionChain, getLevelUpMoves, type EvolutionChainDa
 import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
 import { checkTransferLegality, executeTransfer, type LegalityCheck } from '../services/transfer';
+import { listKnownRoutes } from '../services/mapData';
 import { StatBar } from './StatBar';
 
 const GEN = Generations.get(9);
@@ -45,6 +46,8 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   const [levelUpMoves, setLevelUpMoves] = useState<LevelUpMove[] | null>(null);
   const [heldItem, setHeldItem] = useState(entry.held_item ?? '');
   const [tagInput, setTagInput] = useState('');
+  const [catchLocationDraft, setCatchLocationDraft] = useState(entry.catchLocation ?? '');
+  const knownRoutes = listKnownRoutes();
 
   const instances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
   const titles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
@@ -106,6 +109,7 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
 
   useEffect(() => {
     setHeldItem(entry.held_item ?? '');
+    setCatchLocationDraft(entry.catchLocation ?? '');
     setEvolution(null);
     setLevelUpMoves(null);
     getEvolutionChain(entry.species).then(setEvolution).catch(() => setEvolution({ species: [], edges: [] }));
@@ -118,6 +122,12 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   async function saveHeldItem() {
     await recordSnapshot('held_item', `${entry.species}'s held item set to ${heldItem || '(none)'}`);
     await db.vault.update(entry.uuid, { held_item: heldItem || null });
+  }
+
+  async function saveCatchLocation() {
+    const value = catchLocationDraft.trim() || null;
+    await recordSnapshot('catch_location', `${entry.species}'s catch location set to ${value ?? '(none)'}`);
+    await db.vault.update(entry.uuid, { catchLocation: value });
   }
 
   async function addTag() {
@@ -178,7 +188,39 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
         </div>
       )}
 
-      {entry.catchLocation && <p className="mb-2 text-slate-500">Caught: {entry.catchLocation}</p>}
+      <div className="mb-3">
+        <p className="mb-1 text-slate-500">Caught at</p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            value={catchLocationDraft}
+            onChange={(e) => setCatchLocationDraft(e.target.value)}
+            placeholder="Route / location…"
+            className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
+          />
+          {knownRoutes.length > 0 && (
+            <select
+              value=""
+              onChange={(e) => e.target.value && setCatchLocationDraft(e.target.value)}
+              title="Pick from the Map Guide's known routes (still a short, growing list — most locations need to be typed in freeform for now)"
+              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-1 text-slate-200 outline-none focus:border-cyan-400"
+            >
+              <option value="">From Map…</option>
+              {knownRoutes.map((r) => (
+                <option key={r.routeId} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={() => void saveCatchLocation()}
+            className="rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800/60"
+          >
+            Set
+          </button>
+        </div>
+      </div>
 
       {baseStats && (
         <div className="mb-3 flex flex-col gap-1">

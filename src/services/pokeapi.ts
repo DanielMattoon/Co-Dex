@@ -93,37 +93,47 @@ export interface SpeciesVariety {
   isDefault: boolean;
 }
 
-interface RawSpeciesVarietiesResponse {
-  varieties: { is_default: boolean; pokemon: { name: string; url: string } }[];
+/** Varieties + gender rate come off the same /pokemon-species response, so both are fetched together — one request per species instead of two. */
+export interface SpeciesFormData {
+  varieties: SpeciesVariety[];
+  genderRate: number;
 }
 
-export async function getSpeciesVarieties(name: string): Promise<SpeciesVariety[]> {
-  const data = await cachedFetch<RawSpeciesVarietiesResponse>(`${BASE}/pokemon-species/${toId(name)}`);
-  return data.varieties.map((v) => {
-    const id = Number(v.pokemon.url.replace(/\/$/, '').split('/').pop());
-    return { name: v.pokemon.name, pokemonId: id, isDefault: v.is_default };
-  });
+interface RawSpeciesFormResponse {
+  varieties: { is_default: boolean; pokemon: { name: string; url: string } }[];
+  gender_rate: number;
+}
+
+export async function getSpeciesFormData(name: string): Promise<SpeciesFormData> {
+  const data = await cachedFetch<RawSpeciesFormResponse>(`${BASE}/pokemon-species/${toId(name)}`);
+  return {
+    genderRate: data.gender_rate,
+    varieties: data.varieties.map((v) => {
+      const id = Number(v.pokemon.url.replace(/\/$/, '').split('/').pop());
+      return { name: v.pokemon.name, pokemonId: id, isDefault: v.is_default };
+    }),
+  };
 }
 
 /**
- * Fetches varieties for many species at once, capped to a small concurrency
+ * Fetches form data for many species at once, capped to a small concurrency
  * so a big dex (Pokémon HOME's full ~1025 species) doesn't fire a flat
  * thousand-request burst at PokeAPI simultaneously. Every result is cached
  * to localStorage forever afterward (same cachedFetch as everything else in
  * this file), so this cost is paid once per species, ever.
  */
-export async function getSpeciesVarietiesBulk(speciesNames: string[]): Promise<Map<string, SpeciesVariety[]>> {
+export async function getSpeciesFormDataBulk(speciesNames: string[]): Promise<Map<string, SpeciesFormData>> {
   const unique = [...new Set(speciesNames)];
-  const map = new Map<string, SpeciesVariety[]>();
+  const map = new Map<string, SpeciesFormData>();
   let index = 0;
   async function worker() {
     while (index < unique.length) {
       const i = index++;
       const name = unique[i];
       try {
-        map.set(name, await getSpeciesVarieties(name));
+        map.set(name, await getSpeciesFormData(name));
       } catch {
-        map.set(name, []);
+        map.set(name, { varieties: [], genderRate: -1 });
       }
     }
   }

@@ -37,6 +37,18 @@ export interface RouteMapData {
   markers: MapMarker[];
 }
 
+/**
+ * Every route the Map Guide currently knows about, for the catch-location
+ * picker on a Vault entry (PRD 6.12's "select where you found it," tied to
+ * real Map data instead of freeform-only text). Today that's just the one
+ * hand-typed sample route above — real per-game route lists aren't built
+ * yet (see the file-level comment), so this list will grow as that ETL
+ * pipeline lands rather than staying stuck at one entry.
+ */
+export function listKnownRoutes(): RouteMapData[] {
+  return [SAMPLE_ROUTE];
+}
+
 export const SAMPLE_ROUTE: RouteMapData = {
   routeId: 'kanto_route_1',
   name: 'Route 1',
