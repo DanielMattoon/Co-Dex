@@ -239,6 +239,11 @@ export interface ItemDetail {
   category: string;
   cost: number;
   shortEffect: string;
+  flingPower: number | null;
+  flingEffect: string | null;
+  attributes: string[];
+  /** Species known to hold this item in the wild, per PokeAPI's held_by_pokemon. */
+  heldByPokemon: string[];
 }
 
 interface RawItemListResponse {
@@ -249,7 +254,11 @@ interface RawItemResponse {
   name: string;
   category: { name: string };
   cost: number;
+  fling_power: number | null;
+  fling_effect: { name: string } | null;
+  attributes: { name: string }[];
   effect_entries: { short_effect: string; language: { name: string } }[];
+  held_by_pokemon: { pokemon: { name: string } }[];
 }
 
 export async function listAllItemNames(): Promise<string[]> {
@@ -265,6 +274,10 @@ export async function getItemDetail(name: string): Promise<ItemDetail> {
     category: data.category.name,
     cost: data.cost,
     shortEffect: enEntry?.short_effect ?? 'No effect description available.',
+    flingPower: data.fling_power,
+    flingEffect: data.fling_effect?.name ?? null,
+    attributes: data.attributes.map((a) => a.name),
+    heldByPokemon: data.held_by_pokemon.map((h) => h.pokemon.name),
   };
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { Generations, toID } from '@smogon/calc';
-import { HOME_GENERATION, type GameTitle, type VaultEntry } from '../db/schema';
+import { db, HOME_GENERATION, type GameTitle, type VaultEntry } from '../db/schema';
 import {
   getSpriteUrl,
   getSpeciesFlags,
@@ -13,6 +14,7 @@ import {
 import { getOriginBadgesForSpecies, type OriginBadge } from '../services/originBadges';
 import { bulkAddTag, bulkDelete, bulkToggleFainted, bulkToggleShiny } from '../services/bulkEdit';
 import { quickCatch } from '../services/quickCatch';
+import { markAll, unmarkAll, revertToSelected, type MarkAllTarget } from '../services/massActions';
 import {
   deleteCustomBoxGroup,
   getBoxLabels,
@@ -30,7 +32,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 const GEN = Generations.get(9);
 const ALL_TYPES = [...GEN.types].map((t) => t.name).filter((t) => t !== '???');
 const BADGE_COLORS = ['#22d3ee', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
-const TILE_PX = 56;
+const TILE_PX = 60;
 
 type ViewMode = 'national' | 'regional' | 'type' | 'custom';
 
@@ -40,6 +42,8 @@ interface Tile {
   regionalNumber?: number;
   /** Set only when Gender View has physically split this tile into its own Male/Female slot. */
   gender?: 'male' | 'female';
+  /** Set only when the Variant Slide has physically pushed this specific form out as its own tile. */
+  variety?: SpeciesVariety;
 }
 
 interface BoxGroup {
@@ -83,7 +87,7 @@ function dexRangeLabel(tiles: (Tile | null)[]): string | null {
   return `#${String(min).padStart(4, '0')}–${String(max).padStart(4, '0')}`;
 }
 
-/** What a specimen has beyond a bare quick-catch default — the gate for whether Quick Release needs a confirm. */
+/** What a specimen has beyond a bare quick-catch default — the gate for whether a −/release needs a confirm. */
 function specimenRealDataReasons(e: VaultEntry): string[] {
   const reasons: string[] = [];
   if (e.nickname) reasons.push('a nickname');
@@ -103,32 +107,33 @@ function specimenRealDataReasons(e: VaultEntry): string[] {
 
 /**
  * The unified Living Dex (PRD 6.8) — one tile per species across the whole
- * dex, greyed out until caught. Clicking a tile catches it (or catches
- * another one, if already owned) instantly; a hover-revealed "−" quick-
- * releases the same way (no confirm for a bare test-catch, a confirm once
- * real data — nickname, moves, EVs, etc. — is on record). Hovering also
- * reveals a detail button that opens reference/specimen info without
- * catching, in a side drawer.
+ * dex, greyed out until caught. A persistent top-left "− N +" stepper is
+ * the main way to add/remove duplicates once a species is owned (plain tile
+ * click still catches the first one). Hovering reveals a detail button that
+ * opens reference/specimen info without catching.
  *
  * Forms sharing a National Dex number (Shellos' sea forms, Unown's letters,
- * Deoxys' formes, regional forms) live on the SAME physical tile as a
- * cycle-through overlay in the corner — a Living Dex builder wants to see
- * gaps at a glance, not dig into a side panel to discover a form exists.
- * Gender View is the opposite: it's a global toggle that physically splits
- * every mixed-gender species into its own Male and Female tile so both can
- * be tracked as separate, real gaps — since that breaks the game's real box
- * capacity by definition, the box-chunking layout is suspended (one flowing
- * grid) while it's on, rather than pretending it's still game-accurate.
+ * Deoxys' formes, regional forms — filtered to only what already exists in
+ * the active game's generation) slide open as real, physical tiles pushed
+ * in right next to the base tile, collapsible again with the same control.
+ * A master "Slide All Forms" toggle does this to every multi-form species
+ * at once and remembers the prior state so it can be reverted.
  *
- * "Organize" and "Filter" are deliberately separate controls: Organize only
- * changes how the same tiles are arranged/grouped (view mode, Separate Box,
- * Gender View), Filter changes which tiles are excluded from view.
+ * Gender View physically splits every mixed-gender species into its own
+ * Male and Female tile so an incomplete pair reads as a real gap — it
+ * layers into the SAME game-accurate box grid (more tiles just means more
+ * boxes), it doesn't replace it.
+ *
+ * Mark All / Unmark All / Revert to Selected exist at both the whole-dex
+ * level and per box, backed by a dedicated, unpruned snapshot table so
+ * Revert keeps working no matter how long it's been (PRD 6.1, 6.8).
  */
 export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matchingPokemonIds }: SpeciesGridProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('national');
   const [separateBox, setSeparateBox] = useState(true);
   const [organizeOpen, setOrganizeOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [nationalSpecies, setNationalSpecies] = useState<SpeciesWithId[]>([]);
   const [regionalDex, setRegionalDex] = useState<Tile[]>([]);
   const [rareSpecies, setRareSpecies] = useState<Set<string>>(new Set());
@@ -137,7 +142,13 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [varietiesByPokemonId, setVarietiesByPokemonId] = useState<Map<number, SpeciesVariety[]>>(new Map());
   const [genderRateByPokemonId, setGenderRateByPokemonId] = useState<Map<number, number>>(new Map());
   const [genderView, setGenderView] = useState(false);
-  const [variantCycle, setVariantCycle] = useState<Map<number, number>>(new Map());
+  const [slidOpenTiles, setSlidOpenTiles] = useState<Set<number>>(new Set());
+  const [slidOpenBeforeMaster, setSlidOpenBeforeMaster] = useState<Set<number> | null>(null);
+  const [openBadgeFor, setOpenBadgeFor] = useState<number | null>(null);
+
+  const allInstances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
+  const allTitles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
+  const gameTitleById = useMemo(() => new Map(allTitles.map((t) => [t.game_title_id, t])), [allTitles]);
 
   const [shinyOnly, setShinyOnly] = useState(false);
   const [rareOnly, setRareOnly] = useState(false);
@@ -155,6 +166,8 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [boxLabelDraft, setBoxLabelDraft] = useState('');
   const [confirmingDeleteBox, setConfirmingDeleteBox] = useState<number | null>(null);
   const [confirmingRelease, setConfirmingRelease] = useState<{ uuid: string; species: string; reasons: string[] } | null>(null);
+  const [confirmingMassAction, setConfirmingMassAction] = useState<{ scopeKey: string; pokemonIds: number[]; label: string } | null>(null);
+  const [massActionMessage, setMassActionMessage] = useState<string | null>(null);
 
   const [multiSelected, setMultiSelected] = useState<Set<number>>(new Set());
   const [taggingSelection, setTaggingSelection] = useState(false);
@@ -224,8 +237,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
 
   // A tile's "relevant" varieties: every form sharing its Dex number that
   // isn't a battle-only cosmetic form (Mega/Gmax) and already existed by
-  // the active game's generation. A single-length result means "no slide" —
-  // most species only have one variety (themselves) to begin with.
+  // the active game's generation — "no Galarian Meowth in FireRed."
   function relevantVarieties(tile: Tile): SpeciesVariety[] {
     const all = varietiesByPokemonId.get(tile.pokemonId) ?? [];
     if (all.length <= 1) return all;
@@ -241,22 +253,9 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseTiles, varietiesByPokemonId, gameTitle]);
 
-  function displayedVariety(tile: Tile): SpeciesVariety | undefined {
-    const varieties = variantsByTile.get(tile.pokemonId) ?? [];
-    if (varieties.length <= 1) return undefined;
-    return varieties[(variantCycle.get(tile.pokemonId) ?? 0) % varieties.length];
-  }
-
-  /**
-   * Ownership for exactly the physical tile shown (currently cycled form,
-   * and gender if this is a split tile) — the granularity a Living Dex
-   * builder wants to see gaps at. A specimen caught before Gender View ever
-   * tagged it stays 'genderless' by default — counting that only toward
-   * neither M nor F tile would silently hide real progress, so an untagged
-   * catch surfaces on BOTH gendered tiles until its actual gender is set.
-   */
+  /** Ownership for exactly the physical tile shown (its slid-open form, and gender if this is a split tile). An untagged catch (still 'genderless') surfaces on BOTH gendered tiles rather than silently disappearing. */
   function ownedForTile(tile: Tile): VaultEntry[] {
-    const displayId = displayedVariety(tile)?.pokemonId ?? tile.pokemonId;
+    const displayId = tile.variety?.pokemonId ?? tile.pokemonId;
     const list = ownedByPokemonId.get(displayId) ?? [];
     return tile.gender ? list.filter((e) => e.gender === tile.gender || e.gender === 'genderless') : list;
   }
@@ -302,13 +301,13 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   }, [baseTiles]);
 
   // Custom View is the sandbox: it always shows the true, unfiltered order
-  // (filters, Gender View, and form cycling are all hidden while active) so
-  // box-group boundaries here always match the real persisted sort_priority
-  // order of what's actually owned.
+  // (filters, Gender View, and the Variant Slide are all hidden while
+  // active) so box-group boundaries here always match the real persisted
+  // sort_priority order of what's actually owned.
   const isCustom = viewMode === 'custom';
 
-  // Species-level sort + species-level filters (type/rare/query) — ownership
-  // and gender aren't resolved yet, since Gender View needs to expand first.
+  // Species-level sort + species-level filters (type/rare/query) — ownership,
+  // gender, and form-slide expansion aren't resolved yet.
   const sortedTiles = useMemo(() => {
     let list = baseTiles;
 
@@ -346,14 +345,30 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     });
   }, [baseTiles, viewMode, isCustom, entries, rareOnly, rareSpecies, typeFilter, matchingPokemonIds]);
 
-  // Gender View (PRD 6.6) — physically splits every mixed-gender species
-  // (gender_rate 1–7; excludes always-one-gender and genderless species)
-  // into its own Male and Female tile, so an incomplete pair reads as a
-  // real gap in the grid instead of something hidden behind a click.
-  const genderExpandedTiles = useMemo(() => {
-    if (!genderView || isCustom || viewMode === 'type') return sortedTiles;
+  // Variant Slide — a slid-open species pushes every one of its forms in as
+  // its own physical tile, right next to where the single tile used to be.
+  const variantExpandedTiles = useMemo(() => {
+    if (isCustom || viewMode === 'type') return sortedTiles;
     const out: Tile[] = [];
     for (const t of sortedTiles) {
+      const varieties = variantsByTile.get(t.pokemonId) ?? [];
+      if (varieties.length > 1 && slidOpenTiles.has(t.pokemonId)) {
+        for (const v of varieties) out.push({ ...t, variety: v });
+      } else {
+        out.push(t);
+      }
+    }
+    return out;
+  }, [sortedTiles, isCustom, viewMode, variantsByTile, slidOpenTiles]);
+
+  // Gender View — physically splits every mixed-gender species (gender_rate
+  // 1–7; excludes always-one-gender and genderless species) into its own
+  // Male and Female tile. This layers into the box grid rather than
+  // replacing it — more tiles just means more boxes, same as the game.
+  const genderExpandedTiles = useMemo(() => {
+    if (!genderView || isCustom || viewMode === 'type') return variantExpandedTiles;
+    const out: Tile[] = [];
+    for (const t of variantExpandedTiles) {
       const rate = genderRateByPokemonId.get(t.pokemonId);
       if (rate !== undefined && rate >= 1 && rate <= 7) {
         out.push({ ...t, gender: 'male' });
@@ -363,11 +378,10 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       }
     }
     return out;
-  }, [sortedTiles, genderView, isCustom, viewMode, genderRateByPokemonId]);
+  }, [variantExpandedTiles, genderView, isCustom, viewMode, genderRateByPokemonId]);
 
   // Ownership-dependent filters, applied per physical tile — resolved AFTER
-  // Gender View's split so hiding "caught" only hides a specific Male or
-  // Female slot that's actually filled, not the whole species pair.
+  // both expansions so hiding "caught" only hides a specific filled slot.
   const tiles = useMemo(() => {
     if (isCustom) return genderExpandedTiles;
     return genderExpandedTiles.filter((t) => {
@@ -380,17 +394,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genderExpandedTiles, isCustom, hideCaught, shinyOnly, flaggedOnly, anomalousOnly, ownedByPokemonId, variantsByTile, variantCycle]);
+  }, [genderExpandedTiles, isCustom, hideCaught, shinyOnly, flaggedOnly, anomalousOnly, ownedByPokemonId]);
 
-  // --- Box-group chunking (National/Regional/Custom) ---
-  // Gender View breaks the game's real box capacity by definition (it's
-  // showing more tiles than the game ever could), so box-chunking is
-  // suspended into one flowing group while it's active rather than
-  // pretending a doubled tile count still matches a real PC box.
+  // --- Box-group chunking (National/Regional/Custom) — same real
+  // game-accurate box_width/boxes_slots math the game itself uses; Gender
+  // View and the Variant Slide just mean there are more physical tiles to
+  // chunk, so more boxes appear, exactly like adding Pokémon does today.
   const boxGroups: BoxGroup[] = useMemo(() => {
     if (viewMode === 'type') return [];
-    const genderExpanding = genderView && !isCustom;
-    const effectiveBoxSize = genderExpanding ? Infinity : boxSize;
     const groups: BoxGroup[] = [];
     let current: (Tile | null)[] = [];
     let currentGen: number | null = null;
@@ -398,17 +409,17 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
 
     function pushBox() {
       if (current.length === 0) return;
-      groups.push({ boxNumber, label: genderExpanding ? 'Gender View' : (boxLabels.get(boxNumber) ?? `Box ${boxNumber}`), tiles: current });
+      groups.push({ boxNumber, label: boxLabels.get(boxNumber) ?? `Box ${boxNumber}`, tiles: current });
       boxNumber++;
       current = [];
     }
 
     for (const tile of tiles) {
       const gen = getGeneration(tile.pokemonId);
-      if (viewMode === 'national' && separateBox && !genderExpanding && currentGen !== null && gen !== currentGen && current.length > 0) {
+      if (viewMode === 'national' && separateBox && currentGen !== null && gen !== currentGen && current.length > 0) {
         while (current.length < boxSize) current.push(null);
         pushBox();
-      } else if (current.length >= effectiveBoxSize) {
+      } else if (current.length >= boxSize) {
         pushBox();
       }
       current.push(tile);
@@ -416,7 +427,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     }
     pushBox();
     return groups;
-  }, [tiles, viewMode, separateBox, boxSize, boxLabels, genderView, isCustom]);
+  }, [tiles, viewMode, separateBox, boxSize, boxLabels]);
 
   const typeGroups = useMemo(() => {
     if (viewMode !== 'type') return [];
@@ -435,6 +446,26 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     if (current.length > 0 && currentType) groups.push({ type: currentType, tiles: current });
     return groups;
   }, [tiles, viewMode]);
+
+  // Generation Jumper (National View, every title — most useful on HOME's
+  // full 9-generation span) — per-generation owned/total counts, click to
+  // scroll straight to that generation's first tile.
+  const generationCounts = useMemo(() => {
+    if (viewMode !== 'national') return [];
+    const maxGen = gameTitle && gameTitle.generation !== HOME_GENERATION ? gameTitle.generation : 9;
+    const out: { gen: number; owned: number; total: number; firstPokemonId: number | null }[] = [];
+    for (let g = 1; g <= maxGen; g++) {
+      const inGen = baseTiles.filter((t) => getGeneration(t.pokemonId) === g);
+      const owned = inGen.filter((t) => (ownedByPokemonId.get(t.pokemonId) ?? []).length > 0).length;
+      out.push({ gen: g, owned, total: inGen.length, firstPokemonId: inGen[0]?.pokemonId ?? null });
+    }
+    return out;
+  }, [viewMode, baseTiles, ownedByPokemonId, gameTitle]);
+
+  function jumpToGeneration(pokemonId: number | null) {
+    if (pokemonId === null) return;
+    tileRefs.current.get(pokemonId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   useEffect(() => {
     setMultiSelected(new Set());
@@ -478,18 +509,17 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     window.addEventListener('mouseup', onUp);
   }
 
-  async function catchDisplayed(tile: Tile) {
-    const variety = displayedVariety(tile);
+  async function catchOneForTile(tile: Tile) {
     await quickCatch({
       gameInstanceId,
-      species: titleCase(variety?.name ?? tile.name),
-      pokemonId: variety?.pokemonId ?? tile.pokemonId,
+      species: titleCase(tile.variety?.name ?? tile.name),
+      pokemonId: tile.variety?.pokemonId ?? tile.pokemonId,
       level: 5,
       shiny: false,
       nickname: null,
       ball: null,
       gender: tile.gender ?? 'genderless',
-      form: variety?.name ?? 'default',
+      form: tile.variety?.name ?? 'default',
     });
   }
 
@@ -507,10 +537,10 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       return;
     }
     setMultiSelected(new Set());
-    void catchDisplayed(tile);
+    void catchOneForTile(tile);
   }
 
-  function handleReleaseClick(tile: Tile, e: ReactMouseEvent) {
+  function handleMinusClick(tile: Tile, e: ReactMouseEvent) {
     e.stopPropagation();
     const owned = ownedForTile(tile);
     if (owned.length === 0) return;
@@ -523,28 +553,50 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     }
   }
 
+  function handlePlusClick(tile: Tile, e: ReactMouseEvent) {
+    e.stopPropagation();
+    void catchOneForTile(tile);
+  }
+
   async function confirmRelease() {
     if (!confirmingRelease) return;
     await bulkDelete([confirmingRelease.uuid]);
     setConfirmingRelease(null);
   }
 
-  function cycleVariant(tile: Tile, e: ReactMouseEvent) {
+  function toggleTileSlide(pokemonId: number, e: ReactMouseEvent) {
     e.stopPropagation();
-    const varieties = variantsByTile.get(tile.pokemonId) ?? [];
-    if (varieties.length <= 1) return;
-    setVariantCycle((prev) => {
-      const next = new Map(prev);
-      next.set(tile.pokemonId, ((prev.get(tile.pokemonId) ?? 0) + 1) % varieties.length);
+    setSlidOpenTiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(pokemonId)) next.delete(pokemonId);
+      else next.add(pokemonId);
       return next;
     });
+  }
+
+  const multiFormPokemonIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const [id, vs] of variantsByTile) if (vs.length > 1) set.add(id);
+    return set;
+  }, [variantsByTile]);
+
+  function slideAllOpen() {
+    setSlidOpenBeforeMaster(new Set(slidOpenTiles));
+    setSlidOpenTiles(new Set(multiFormPokemonIds));
+  }
+  function collapseAllSlides() {
+    setSlidOpenBeforeMaster(new Set(slidOpenTiles));
+    setSlidOpenTiles(new Set());
+  }
+  function revertSlides() {
+    if (slidOpenBeforeMaster) setSlidOpenTiles(slidOpenBeforeMaster);
   }
 
   function handleDetailClick(tile: Tile, e: ReactMouseEvent) {
     e.stopPropagation();
     setMultiSelected(new Set());
     setSelectedUuid(null);
-    setExpandedPokemonId(displayedVariety(tile)?.pokemonId ?? tile.pokemonId);
+    setExpandedPokemonId(tile.variety?.pokemonId ?? tile.pokemonId);
     setExpandedGender(tile.gender ?? null);
   }
 
@@ -626,21 +678,51 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     setConfirmingDeleteBox(null);
   }
 
-  // The drawer resolves purely off expandedPokemonId, which may itself be a
-  // variety's own id (not necessarily present in `tiles`) — so its display
-  // name is looked up across both the tile list and every tile's varieties.
-  function resolveExpandedName(): string | undefined {
-    if (expandedPokemonId === null) return undefined;
-    const direct = tiles.find((t) => t.pokemonId === expandedPokemonId) ?? baseTiles.find((t) => t.pokemonId === expandedPokemonId);
-    if (direct) return direct.name;
-    for (const list of variantsByTile.values()) {
-      const v = list.find((vv) => vv.pokemonId === expandedPokemonId);
-      if (v) return v.name;
+  // --- Mark All / Unmark All / Revert to Selected (whole dex + per box) ---
+  function uniqueTargetsFromTiles(list: (Tile | null)[]): MarkAllTarget[] {
+    const byId = new Map<number, MarkAllTarget>();
+    for (const t of list) {
+      if (!t || byId.has(t.pokemonId)) continue;
+      byId.set(t.pokemonId, { pokemonId: t.pokemonId, species: titleCase(t.name), gender: 'genderless', form: 'default' });
     }
-    return undefined;
+    return [...byId.values()];
   }
 
-  const expandedName = resolveExpandedName();
+  async function handleMarkAll(scopeKey: string, targets: MarkAllTarget[]) {
+    await markAll(scopeKey, gameInstanceId, targets, (t) =>
+      quickCatch({ gameInstanceId, species: t.species, pokemonId: t.pokemonId, level: 5, shiny: false, nickname: null, ball: null, gender: t.gender, form: t.form }),
+    );
+    setMassActionMessage(null);
+  }
+
+  function requestUnmarkAll(scopeKey: string, targets: MarkAllTarget[], label: string) {
+    setConfirmingMassAction({ scopeKey, pokemonIds: targets.map((t) => t.pokemonId), label });
+  }
+
+  async function confirmUnmarkAll() {
+    if (!confirmingMassAction) return;
+    await unmarkAll(confirmingMassAction.scopeKey, gameInstanceId, confirmingMassAction.pokemonIds);
+    setConfirmingMassAction(null);
+    setMassActionMessage(null);
+  }
+
+  async function handleRevertToSelected(scopeKey: string) {
+    const ok = await revertToSelected(scopeKey);
+    setMassActionMessage(ok ? null : 'Nothing to revert here yet — Revert restores the state from the last Mark All/Unmark All in this scope.');
+  }
+
+  const dexScopeKey = `${gameInstanceId}::ALL`;
+  const dexTargets = useMemo(() => uniqueTargetsFromTiles(sortedTiles), [sortedTiles]);
+
+  const expandedTileForDrawer =
+    expandedPokemonId !== null ? tiles.find((t) => (t.variety?.pokemonId ?? t.pokemonId) === expandedPokemonId) : undefined;
+  const expandedName =
+    expandedPokemonId !== null
+      ? expandedTileForDrawer?.variety?.name ??
+        expandedTileForDrawer?.name ??
+        baseTiles.find((t) => t.pokemonId === expandedPokemonId)?.name ??
+        [...variantsByTile.values()].flat().find((v) => v.pokemonId === expandedPokemonId)?.name
+      : undefined;
   const expandedSpecies =
     expandedPokemonId !== null
       ? (ownedByPokemonId.get(expandedPokemonId) ?? []).filter((e) => !expandedGender || e.gender === expandedGender)
@@ -648,13 +730,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const selected = entries.find((e) => e.uuid === selectedUuid) ?? null;
   const drawerOpen = expandedPokemonId !== null;
 
+  useClickOutside(openBadgeFor !== null, 'data-badge-dropdown', () => setOpenBadgeFor(null));
+
   function renderTile(tile: Tile) {
     const varieties = variantsByTile.get(tile.pokemonId) ?? [];
     const hasVariants = varieties.length > 1;
-    const cycleIndex = variantCycle.get(tile.pokemonId) ?? 0;
-    const activeVariety = hasVariants ? varieties[cycleIndex % varieties.length] : undefined;
-    const displayId = activeVariety?.pokemonId ?? tile.pokemonId;
-    const displayName = activeVariety?.name ?? tile.name;
+    const slidOpen = slidOpenTiles.has(tile.pokemonId);
+    const displayId = tile.variety?.pokemonId ?? tile.pokemonId;
+    const displayName = tile.variety?.name ?? tile.name;
     const owned = ownedForTile(tile);
     const isOwned = owned.length > 0;
     const isShiny = owned.some((o) => o.shiny);
@@ -663,8 +746,9 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const isMultiSelected = multiSelected.has(tile.pokemonId);
     const isReservedTarget = reservedTargetSpecies.has(toID(tile.name));
     const isLocked = owned.some((o) => o.breeding_project_lock?.is_locked);
-    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}`;
+    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.pokemonId ?? 'd'}`;
     const genderMark = tile.gender ? (tile.gender === 'male' ? ' ♂' : ' ♀') : '';
+    const formMark = tile.variety ? ` (${formVarietyLabel(tile.variety, tile.name)})` : '';
 
     return (
       <div
@@ -681,7 +765,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           e.preventDefault();
           handleTileClick(tile, e as unknown as ReactMouseEvent);
         }}
-        title={`${titleCase(displayName)}${genderMark}`}
+        title={`${titleCase(displayName)}${genderMark}${formMark}`}
         className={[
           'group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded border p-0.5 outline-none',
           isMultiSelected
@@ -697,6 +781,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           isReservedTarget ? 'border-dashed border-blue-400' : '',
           isAnomalous ? 'warning-pulse border-red-500' : '',
         ].join(' ')}
+        style={{ width: TILE_PX, height: TILE_PX }}
       >
         <img
           src={getSpriteUrl(displayId, isShiny)}
@@ -708,50 +793,77 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           #{tile.regionalNumber ?? tile.pokemonId}
           {genderMark}
         </span>
-        {owned.length > 1 && <span className="absolute bottom-0.5 right-0.5 rounded-full bg-slate-950/80 px-1 text-[8px] text-cyan-300">×{owned.length}</span>}
-        {hasVariants && (
+        {isOwned && (
+          <div className="absolute left-0.5 top-0.5 z-10 flex items-center gap-0.5 rounded bg-slate-950/90 px-0.5 text-[8px] leading-none">
+            <button type="button" onClick={(e) => handleMinusClick(tile, e)} title="Remove one" className="px-0.5 text-red-300 hover:text-red-200">
+              −
+            </button>
+            <span className="text-slate-200">{owned.length}</span>
+            <button type="button" onClick={(e) => handlePlusClick(tile, e)} title="Add another" className="px-0.5 text-cyan-300 hover:text-cyan-200">
+              +
+            </button>
+          </div>
+        )}
+        {hasVariants && !tile.variety && (
           <button
             type="button"
-            onClick={(e) => cycleVariant(tile, e)}
-            title={`${formVarietyLabel(activeVariety ?? varieties[0], tile.name)} — ${cycleIndex + 1}/${varieties.length}. Click to cycle forms.`}
-            className="absolute left-0.5 top-0.5 z-10 flex h-3.5 min-w-[14px] items-center justify-center rounded-sm border border-violet-700/60 bg-slate-950/90 px-0.5 text-[7px] leading-none text-violet-300 hover:bg-violet-900/60"
+            onClick={(e) => toggleTileSlide(tile.pokemonId, e)}
+            title={slidOpen ? `Collapse ${varieties.length} forms back into one tile` : `Slide open ${varieties.length} forms as their own tiles`}
+            className="absolute bottom-0.5 right-0.5 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-violet-700/60 bg-slate-950/90 text-[9px] leading-none text-violet-300 hover:bg-violet-900/60"
           >
-            {cycleIndex + 1}/{varieties.length}
+            {slidOpen ? '◂' : '▸'}
           </button>
         )}
         {tileBadges.length > 0 && (
-          <span className="absolute bottom-0.5 left-0.5 flex gap-0.5" title={`Also owned in: ${tileBadges.map((b) => b.gameTitleName).join(', ')}`}>
+          <button
+            type="button"
+            data-badge-dropdown
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenBadgeFor((v) => (v === tile.pokemonId ? null : tile.pokemonId));
+            }}
+            title="Which of your Dexes have this species — click to open"
+            className="absolute bottom-0.5 left-0.5 z-10 flex gap-0.5 rounded bg-slate-950/40 p-0.5"
+          >
             {tileBadges.slice(0, 3).map((b, i) => (
               <span key={b.gameInstanceId} className="h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: BADGE_COLORS[i % BADGE_COLORS.length] }} />
             ))}
-          </span>
-        )}
-        <div className="absolute right-0.5 top-0.5 hidden gap-0.5 group-hover:flex group-focus-within:flex">
-          {isOwned && (
-            <button
-              type="button"
-              onClick={(e) => handleReleaseClick(tile, e)}
-              title="Quick release (uncatch)"
-              className="flex h-4 w-4 items-center justify-center rounded-full border border-red-700/60 bg-slate-950/90 text-[9px] leading-none text-red-300 hover:bg-red-900/60"
-            >
-              −
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => handleDetailClick(tile, e)}
-            title={`${titleCase(displayName)} details`}
-            className="flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800"
-          >
-            ⓘ
           </button>
-        </div>
+        )}
+        {openBadgeFor === tile.pokemonId && (
+          <div
+            data-badge-dropdown
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-full left-0 z-30 mb-1 w-40 rounded border border-slate-700 bg-slate-900/98 p-1.5 text-[9px] shadow-2xl"
+          >
+            <p className="mb-1 text-slate-500">Owned in:</p>
+            {allInstances.map((inst) => {
+              const t = gameTitleById.get(inst.game_title_id);
+              const hasIt = inst.game_instance_id === gameInstanceId ? isOwned : tileBadges.some((b) => b.gameInstanceId === inst.game_instance_id);
+              return (
+                <div key={inst.game_instance_id} className="flex items-center gap-1.5 py-0.5">
+                  <span className={hasIt ? 'text-emerald-400' : 'text-slate-600'}>{hasIt ? '✓' : '—'}</span>
+                  <span className="text-slate-300">{t?.name ?? inst.game_title_id}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={(e) => handleDetailClick(tile, e)}
+          title={`${titleCase(displayName)} details`}
+          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
+        >
+          ⓘ
+        </button>
       </div>
     );
   }
 
   useClickOutside(organizeOpen, 'data-organize-dropdown', () => setOrganizeOpen(false));
   useClickOutside(filterOpen, 'data-filter-dropdown', () => setFilterOpen(false));
+  useClickOutside(bulkOpen, 'data-bulk-dropdown', () => setBulkOpen(false));
 
   return (
     <div className="flex h-full gap-3 text-xs">
@@ -763,6 +875,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               onClick={() => {
                 setOrganizeOpen((v) => !v);
                 setFilterOpen(false);
+                setBulkOpen(false);
               }}
               className={[
                 'rounded border px-2.5 py-1 text-[10px]',
@@ -772,7 +885,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               Organize {organizeOpen ? '▲' : '▼'}
             </button>
             {organizeOpen && (
-              <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[240px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
+              <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[260px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
                 <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">View</p>
                 <div className="flex flex-wrap gap-1.5">
                   {(['national', 'regional', 'type', 'custom'] as ViewMode[]).map((mode) => (
@@ -801,16 +914,31 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                     type="button"
                     onClick={() => setGenderView((v) => !v)}
                     disabled={isCustom || viewMode === 'type'}
-                    title="Physically splits every mixed-gender species into its own Male and Female tile, so an incomplete pair reads as a real gap. Suspends game-accurate box sizing while on."
+                    title="Physically splits every mixed-gender species into its own Male and Female tile within the same box grid."
                     className={['rounded border px-2 py-0.5 text-[10px]', genderView ? 'border-pink-400/60 bg-pink-500/20 text-pink-300' : 'border-slate-700 text-slate-400 disabled:opacity-30'].join(' ')}
                   >
                     Gender View
                   </button>
                 </div>
-                {isCustom && <p className="mt-2 text-slate-500">Custom View is your sandbox — full reorder/rename/delete on box groups.</p>}
-                {genderView && !isCustom && viewMode !== 'type' && (
-                  <p className="mt-2 text-pink-300">Gender View is on — box layout is suspended (this isn't a real game box), showing every catchable gender side by side.</p>
+                {!isCustom && viewMode !== 'type' && multiFormPokemonIds.size > 0 && (
+                  <>
+                    <p className="mb-1 mt-2 text-[9px] uppercase tracking-wide text-slate-500">Variant Slide ({multiFormPokemonIds.size} species)</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button type="button" onClick={slideAllOpen} className="rounded border border-violet-500/50 bg-violet-500/20 px-2 py-0.5 text-violet-300 hover:bg-violet-500/30">
+                        Slide All Forms
+                      </button>
+                      <button type="button" onClick={collapseAllSlides} className="rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60">
+                        Collapse All
+                      </button>
+                      {slidOpenBeforeMaster && (
+                        <button type="button" onClick={revertSlides} className="rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60">
+                          Revert
+                        </button>
+                      )}
+                    </div>
+                  </>
                 )}
+                {isCustom && <p className="mt-2 text-slate-500">Custom View is your sandbox — full reorder/rename/delete on box groups.</p>}
               </div>
             )}
           </div>
@@ -821,6 +949,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               onClick={() => {
                 setFilterOpen((v) => !v);
                 setOrganizeOpen(false);
+                setBulkOpen(false);
               }}
               disabled={isCustom}
               className={[
@@ -862,15 +991,90 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             )}
           </div>
 
+          <div className="relative" data-bulk-dropdown>
+            <button
+              type="button"
+              onClick={() => {
+                setBulkOpen((v) => !v);
+                setOrganizeOpen(false);
+                setFilterOpen(false);
+              }}
+              className={[
+                'rounded border px-2.5 py-1 text-[10px]',
+                bulkOpen ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60',
+              ].join(' ')}
+            >
+              Bulk {bulkOpen ? '▲' : '▼'}
+            </button>
+            {bulkOpen && (
+              <div className="absolute left-0 top-full z-20 mt-1 w-max min-w-[220px] rounded-lg border border-slate-700 bg-slate-900/98 p-2.5 shadow-2xl">
+                <p className="mb-1 text-[9px] uppercase tracking-wide text-slate-500">This whole dex</p>
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" onClick={() => void handleMarkAll(dexScopeKey, dexTargets)} className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-0.5 text-cyan-300 hover:bg-cyan-500/30">
+                    Mark All
+                  </button>
+                  <button type="button" onClick={() => requestUnmarkAll(dexScopeKey, dexTargets, 'this whole dex')} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-0.5 text-red-300 hover:bg-red-500/30">
+                    Unmark All
+                  </button>
+                  <button type="button" onClick={() => void handleRevertToSelected(dexScopeKey)} className="rounded border border-slate-700 px-2 py-0.5 text-slate-400 hover:bg-slate-800/60">
+                    Revert to Selected
+                  </button>
+                </div>
+                <p className="mt-2 text-slate-500">Mark/Unmark All catches or clears the default form of every species currently in view. Each box also has its own Mark/Unmark/Revert in its header.</p>
+              </div>
+            )}
+          </div>
+
           <span className="ml-auto text-slate-500">
             {entries.length > 0 && `${new Set(entries.map((e) => e.pokemon_id)).size}/${baseTiles.length || '…'} caught`}
           </span>
         </div>
 
+        {viewMode === 'national' && generationCounts.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {generationCounts.map((g) => (
+              <button
+                key={g.gen}
+                type="button"
+                onClick={() => jumpToGeneration(g.firstPokemonId)}
+                title={`Jump to Generation ${g.gen}`}
+                className="rounded border border-slate-700 px-1.5 py-0.5 text-[9px] text-slate-400 hover:border-cyan-400 hover:text-cyan-300"
+              >
+                Gen {g.gen} <span className="text-slate-500">{g.owned}/{g.total}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {overCapacity && (
           <div className="warning-pulse rounded-lg border border-red-500 bg-red-950/40 p-2 text-red-300">
             {entries.length} specimens on hand exceeds {gameTitle?.name}'s real storage capacity ({capacity}). Something's off — check for
             duplicates or specimens that should have been traded/released.
+          </div>
+        )}
+
+        {massActionMessage && (
+          <div className="rounded-lg border border-slate-700 bg-slate-800/60 p-2 text-slate-400">
+            {massActionMessage}
+            <button type="button" onClick={() => setMassActionMessage(null)} className="ml-2 text-cyan-300 hover:underline">
+              dismiss
+            </button>
+          </div>
+        )}
+
+        {confirmingMassAction && (
+          <div className="rounded-lg border border-red-900/50 bg-red-950/30 p-2">
+            <p className="mb-2 text-red-300">
+              Unmark All in {confirmingMassAction.label}? This releases every specimen of {confirmingMassAction.pokemonIds.length} species there. Revert to Selected will bring them back afterward, no matter how long it's been.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => void confirmUnmarkAll()} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 text-red-300 hover:bg-red-500/30">
+                Unmark All
+              </button>
+              <button type="button" onClick={() => setConfirmingMassAction(null)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+                Cancel
+              </button>
+            </div>
           </div>
         )}
 
@@ -958,9 +1162,11 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
               : boxGroups.map((group) => {
                   const range = dexRangeLabel(group.tiles);
                   const ownedCount = group.tiles.filter((t) => t && ownedForTile(t).length > 0).length;
+                  const boxScopeKey = `${gameInstanceId}::box-${group.boxNumber}`;
+                  const boxTargets = uniqueTargetsFromTiles(group.tiles);
                   return (
                     <div key={group.boxNumber}>
-                      <div className="mb-1 flex items-center gap-2">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
                         {editingBoxNumber === group.boxNumber ? (
                           <>
                             <input
@@ -973,14 +1179,15 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                             <button type="button" onClick={() => void saveBoxLabel()} className="text-cyan-300">✓</button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => (genderView && !isCustom ? undefined : startEditBoxLabel(group))}
-                            className="font-retro text-[9px] text-slate-300 hover:text-cyan-300"
-                          >
-                            {group.label} {!isCustom && !genderView && range && <span className="text-slate-500">{range}</span>} <span className="text-slate-500">({ownedCount}/{group.tiles.length})</span>
+                          <button type="button" onClick={() => startEditBoxLabel(group)} className="font-retro text-[9px] text-slate-300 hover:text-cyan-300">
+                            {group.label} {!isCustom && range && <span className="text-slate-500">{range}</span>} <span className="text-slate-500">({ownedCount}/{group.tiles.length})</span>
                           </button>
                         )}
+                        <div className="flex items-center gap-1 text-[9px] text-slate-500">
+                          <button type="button" onClick={() => void handleMarkAll(boxScopeKey, boxTargets)} title="Mark All in this box" className="hover:text-cyan-300">✓all</button>
+                          <button type="button" onClick={() => requestUnmarkAll(boxScopeKey, boxTargets, group.label)} title="Unmark All in this box" className="hover:text-red-400">✗all</button>
+                          <button type="button" onClick={() => void handleRevertToSelected(boxScopeKey)} title="Revert this box to before the last Mark/Unmark All" className="hover:text-cyan-300">↺</button>
+                        </div>
                         {isCustom && (
                           <div className="ml-auto flex items-center gap-1.5 text-slate-500">
                             <button type="button" disabled={group.boxNumber === 1} onClick={() => void moveBoxGroup(group.boxNumber, 'up')} className="hover:text-cyan-300 disabled:opacity-20">◀</button>
@@ -1015,7 +1222,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                           tile ? (
                             renderTile(tile)
                           ) : (
-                            <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" />
+                            <div key={`empty-${group.boxNumber}-${i}`} className="aspect-square rounded border border-dashed border-slate-800/60 bg-slate-900/20" style={{ width: TILE_PX, height: TILE_PX }} />
                           ),
                         )}
                       </div>

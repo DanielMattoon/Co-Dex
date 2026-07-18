@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
 import { createGameInstance, ensureSeedTitles, setActiveGameInstance } from '../services/gameInstances';
+import { setNuzlockeMode } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
 /**
@@ -60,17 +61,29 @@ export function GameSavesPanel() {
                     {instance.isNuzlockeMode ? 'Nuzlocke' : 'Standard'} · {new Date(instance.created_date).toLocaleDateString()}
                   </p>
                 </div>
-                {active ? (
-                  <span className="shrink-0 text-emerald-400">Active</span>
-                ) : (
+                <div className="flex shrink-0 items-center gap-1.5">
                   <button
                     type="button"
-                    onClick={() => void setActiveGameInstance(instance.game_instance_id)}
-                    className="shrink-0 rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30"
+                    onClick={() => void setNuzlockeMode(instance.game_instance_id, !instance.isNuzlockeMode)}
+                    className={[
+                      'rounded border px-2 py-1',
+                      instance.isNuzlockeMode ? 'border-red-500/50 bg-red-500/20 text-red-300' : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+                    ].join(' ')}
                   >
-                    Switch
+                    Nuzlocke: {instance.isNuzlockeMode ? 'ON' : 'OFF'}
                   </button>
-                )}
+                  {active ? (
+                    <span className="text-emerald-400">Active</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void setActiveGameInstance(instance.game_instance_id)}
+                      className="rounded border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300 hover:bg-cyan-500/30"
+                    >
+                      Switch
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}

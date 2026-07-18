@@ -2,12 +2,23 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Generations, toID } from '@smogon/calc';
 import { db, type VaultEntry } from '../db/schema';
-import { getSpriteUrl, getEvolutionChain, getLevelUpMoves, type EvolutionChainData, type LevelUpMove } from '../services/pokeapi';
+import {
+  getSpriteUrl,
+  getEvolutionChain,
+  getLevelUpMoves,
+  listAllItemNames,
+  type EvolutionChainData,
+  type EvolutionEdge,
+  type LevelUpMove,
+} from '../services/pokeapi';
 import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
 import { checkTransferLegality, executeTransfer, type LegalityCheck } from '../services/transfer';
 import { listKnownRoutes } from '../services/mapData';
+import { quickCatch } from '../services/quickCatch';
+import { bulkDelete } from '../services/bulkEdit';
 import { StatBar } from './StatBar';
+import { SpeciesPicker } from './SpeciesPicker';
 
 const GEN = Generations.get(9);
 const STAT_LABELS: [keyof VaultEntry['ivs'], string][] = [
@@ -48,6 +59,64 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   const [tagInput, setTagInput] = useState('');
   const [catchLocationDraft, setCatchLocationDraft] = useState(entry.catchLocation ?? '');
   const knownRoutes = listKnownRoutes();
+  const [itemNames, setItemNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    listAllItemNames().then(setItemNames).catch(() => setItemNames([]));
+  }, []);
+
+  // Same species/form/gender, in this same save — the pool the +/- stepper
+  // increments/decrements, mirroring the Living Dex tile's own +/- control.
+  const duplicates = useLiveQuery(
+    () =>
+      db.vault
+        .where('current_game_instance_id')
+        .equals(entry.current_game_instance_id)
+        .and((e) => e.pokemon_id === entry.pokemon_id && e.form === entry.form && e.gender === entry.gender)
+        .toArray(),
+    [entry.current_game_instance_id, entry.pokemon_id, entry.form, entry.gender],
+  ) ?? [entry];
+
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+
+  async function addDuplicate() {
+    await quickCatch({
+      gameInstanceId: entry.current_game_instance_id,
+      species: entry.species,
+      pokemonId: entry.pokemon_id,
+      level: 5,
+      shiny: false,
+      nickname: null,
+      ball: null,
+      gender: entry.gender,
+      form: entry.form,
+    });
+  }
+
+  function removeDuplicateReasons(e: VaultEntry): string[] {
+    const reasons: string[] = [];
+    if (e.nickname) reasons.push('a nickname');
+    if (e.level !== 5) reasons.push(`level ${e.level}`);
+    if (e.moves.length > 0) reasons.push('moves');
+    if (e.held_item) reasons.push('a held item');
+    if (e.tags.length > 0) reasons.push('tags');
+    if (e.shiny) reasons.push('shiny status');
+    if (e.reservation_status.is_reserved) reasons.push('an evolution reservation');
+    return reasons;
+  }
+
+  async function removeThisSpecimen() {
+    await bulkDelete([entry.uuid]);
+    onClose();
+  }
+
+  function handleMinusClick() {
+    if (removeDuplicateReasons(entry).length === 0) {
+      void removeThisSpecimen();
+    } else {
+      setConfirmingRemove(true);
+    }
+  }
 
   const instances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
   const titles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
@@ -159,7 +228,23 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   }
 
   const links = externalLinks(entry.species);
-  const nextEvolutions = evolution?.edges.filter((e) => e.from === entry.species) ?? [];
+
+  // Every downstream species reachable from this one, however many hops
+  // away — Bulbasaur can reserve Ivysaur (1 hop) or Venusaur (2 hops), not
+  // just its immediate next stage.
+  function downstreamEvolutions(edges: EvolutionEdge[], from: string): { to: string; hops: number; path: EvolutionEdge[] }[] {
+    const results: { to: string; hops: number; path: EvolutionEdge[] }[] = [];
+    function walk(species: string, path: EvolutionEdge[]) {
+      for (const edge of edges.filter((e) => e.from === species)) {
+        const nextPath = [...path, edge];
+        results.push({ to: edge.to, hops: nextPath.length, path: nextPath });
+        walk(edge.to, nextPath);
+      }
+    }
+    walk(from, []);
+    return results;
+  }
+  const reachableEvolutions = evolution ? downstreamEvolutions(evolution.edges, entry.species) : [];
 
   return (
     <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/60 p-3 text-xs">
@@ -175,11 +260,44 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
             {entry.species} {entry.shiny && <span className="text-amber-300">★</span>}
           </p>
           <p className="text-slate-500">Lv. {entry.level}</p>
+          <div className="mt-1 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleMinusClick}
+              title="Remove one (this specimen)"
+              className="flex h-5 w-5 items-center justify-center rounded border border-red-700/60 text-red-300 hover:bg-red-900/40"
+            >
+              −
+            </button>
+            <span className="text-slate-400">{duplicates.length} owned</span>
+            <button
+              type="button"
+              onClick={() => void addDuplicate()}
+              title="Add another duplicate"
+              className="flex h-5 w-5 items-center justify-center rounded border border-cyan-700/60 text-cyan-300 hover:bg-cyan-900/40"
+            >
+              +
+            </button>
+          </div>
         </div>
         <button type="button" onClick={onClose} className="ml-auto self-start text-[10px] text-slate-400 hover:text-slate-200">
           close
         </button>
       </div>
+
+      {confirmingRemove && (
+        <div className="mb-2 rounded border border-red-900/50 bg-red-950/30 p-2 text-red-300">
+          <p className="mb-2">Remove this {entry.species}? It has {removeDuplicateReasons(entry).join(', ')} — this can be undone from Version History.</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void removeThisSpecimen()} className="rounded border border-red-500/50 bg-red-500/20 px-2 py-1 hover:bg-red-500/30">
+              Remove
+            </button>
+            <button type="button" onClick={() => setConfirmingRemove(false)} className="rounded border border-slate-700 px-2 py-1 text-slate-400 hover:bg-slate-800/60">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {entry.is_sandbox_anomalous && (
         <div className="warning-pulse mb-2 rounded border border-red-500 bg-red-950/40 p-2 text-red-300">
@@ -275,12 +393,15 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
       <div className="mb-3">
         <p className="mb-1 text-slate-500">Held item</p>
         <div className="flex gap-2">
-          <input
-            value={heldItem}
-            onChange={(e) => setHeldItem(e.target.value)}
-            placeholder="(none)"
-            className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
-          />
+          <div className="flex-1">
+            <SpeciesPicker
+              instanceId={`held-item-${entry.uuid}`}
+              value={heldItem}
+              onChange={setHeldItem}
+              options={itemNames}
+              placeholder="(none)"
+            />
+          </div>
           <button
             type="button"
             onClick={() => void saveHeldItem()}
@@ -394,30 +515,33 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
       </div>
 
       <div className="mb-3">
-        <p className="mb-1 text-slate-500">Evolution</p>
+        <p className="mb-1 text-slate-500">Evolution — reserve any stage in the line, not just the next one</p>
         {evolution === null && <p className="text-slate-600">Loading…</p>}
         {evolution && evolution.species.length <= 1 && <p className="text-slate-600">Doesn't evolve.</p>}
-        {evolution && nextEvolutions.length > 0 && (
+        {evolution && reachableEvolutions.length > 0 && (
           <ul className="flex flex-col gap-1.5">
-            {nextEvolutions.map((edge) => {
-              const reserved = entry.reservation_status.target_evolution_id === edge.to;
+            {reachableEvolutions.map((r) => {
+              const reserved = entry.reservation_status.target_evolution_id === r.to;
+              const lastLeg = r.path[r.path.length - 1];
               return (
                 <li
-                  key={edge.to}
+                  key={r.to}
                   className={[
                     'flex items-center justify-between rounded border p-1.5',
                     reserved ? 'border-dashed border-amber-400' : 'border-slate-700',
                   ].join(' ')}
                 >
                   <span className="text-slate-300">
-                    → {edge.to}
-                    {edge.minLevel && <span className="text-slate-500"> (Lv. {edge.minLevel})</span>}
-                    {edge.item && <span className="text-slate-500"> ({edge.item})</span>}
-                    {edge.requiresTrade && <span className="text-amber-400"> (trade)</span>}
+                    {'→ '.repeat(r.hops)}
+                    {r.to}
+                    {r.hops > 1 && <span className="text-slate-500"> ({r.hops} stages)</span>}
+                    {lastLeg.minLevel && <span className="text-slate-500"> (Lv. {lastLeg.minLevel})</span>}
+                    {lastLeg.item && <span className="text-slate-500"> ({lastLeg.item})</span>}
+                    {r.path.some((e) => e.requiresTrade) && <span className="text-amber-400"> (trade)</span>}
                   </span>
                   <button
                     type="button"
-                    onClick={() => void toggleReservation(edge.to)}
+                    onClick={() => void toggleReservation(r.to)}
                     className={[
                       'rounded border px-2 py-0.5 text-[10px]',
                       reserved

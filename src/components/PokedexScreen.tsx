@@ -81,15 +81,17 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
               className={[
                 'flex flex-col items-center rounded border p-0.5',
                 selected?.name === s.name ? 'border-cyan-400' : 'border-slate-700',
-                caught ? '' : 'opacity-40 grayscale',
               ].join(' ')}
             >
-              <img
-                src={getSpriteUrl(s.pokemonId)}
-                alt={s.name}
-                className="h-8 w-8"
-                style={{ imageRendering: 'pixelated' }}
-              />
+              <div className="relative">
+                <img
+                  src={getSpriteUrl(s.pokemonId)}
+                  alt={s.name}
+                  className="h-8 w-8"
+                  style={{ imageRendering: 'pixelated' }}
+                />
+                {caught && <span className="absolute -right-0.5 -top-0.5 text-emerald-400">✓</span>}
+              </div>
               <span className="truncate text-[8px] text-slate-400">#{s.pokemonId}</span>
             </button>
           );

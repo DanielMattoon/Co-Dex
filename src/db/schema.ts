@@ -229,6 +229,22 @@ export interface VersionHistoryEntry {
   compacted: boolean;
 }
 
+/**
+ * Durable "before" state for a Mark All / Unmark All action, scoped to one
+ * dex or one box within it (PRD 6.1/6.8's Revert to Selected). Kept in its
+ * own table, one row per scope (overwritten on the next mass action in that
+ * same scope) rather than folded into Version History's pruned, time-boxed
+ * snapshots — this has to keep working "no matter how long it's been."
+ */
+export interface MassActionSnapshot {
+  /** `${game_instance_id}::ALL` for a whole-dex action, `${game_instance_id}::box-${n}` for one box. */
+  scope_key: string;
+  game_instance_id: string;
+  pokemon_ids: number[];
+  timestamp: string;
+  entries: VaultEntry[];
+}
+
 export const db = new Dexie('CoDexDatabase') as Dexie & {
   game_titles: EntityTable<GameTitle, 'game_title_id'>;
   game_instances: EntityTable<GameInstance, 'game_instance_id'>;
@@ -241,6 +257,7 @@ export const db = new Dexie('CoDexDatabase') as Dexie & {
   teams: EntityTable<Team, 'team_id'>;
   box_labels: EntityTable<BoxLabel, 'id'>;
   shiny_hunt_log: EntityTable<ShinyHuntLogEntry, 'id'>;
+  mass_action_snapshots: EntityTable<MassActionSnapshot, 'scope_key'>;
 };
 
 db.version(1).stores({
@@ -275,4 +292,8 @@ db.version(6).stores({
 
 db.version(7).stores({
   teams: 'team_id, created_date, game_instance_id',
+});
+
+db.version(8).stores({
+  mass_action_snapshots: 'scope_key, game_instance_id',
 });

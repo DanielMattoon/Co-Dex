@@ -65,11 +65,20 @@ export function ItemDex() {
           {!selected && <p className="text-slate-500">Pick an item.</p>}
           {selected && !detail && !error && <p className="text-slate-500">Loading…</p>}
           {detail && (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <p className="font-retro text-[9px] text-slate-200">{detail.name}</p>
               <p className="text-slate-500">{detail.category}</p>
               <p className="text-amber-300">{detail.cost > 0 ? `₽${detail.cost}` : 'Not sold'}</p>
               <p className="text-slate-300">{detail.shortEffect}</p>
+              {detail.flingPower !== null && (
+                <p className="text-slate-500">
+                  Fling: {detail.flingPower} power{detail.flingEffect ? ` (${detail.flingEffect})` : ''}
+                </p>
+              )}
+              {detail.attributes.length > 0 && <p className="text-slate-500">Attributes: {detail.attributes.join(', ')}</p>}
+              {detail.heldByPokemon.length > 0 && (
+                <p className="text-slate-500">Held in the wild by: {detail.heldByPokemon.join(', ')}</p>
+              )}
             </div>
           )}
         </div>

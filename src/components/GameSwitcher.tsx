@@ -20,6 +20,7 @@ export function GameSwitcher() {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newTitleId, setNewTitleId] = useState('');
+  const [newNuzlocke, setNewNuzlocke] = useState(false);
 
   const instances = useLiveQuery(
     () => db.game_instances.toArray().then((rows) => rows.sort((a, b) => a.created_date.localeCompare(b.created_date))),
@@ -45,7 +46,8 @@ export function GameSwitcher() {
 
   async function handleCreate() {
     if (!newTitleId) return;
-    await createGameInstance(newTitleId, false);
+    await createGameInstance(newTitleId, newNuzlocke);
+    setNewNuzlocke(false);
     setCreating(false);
     setOpen(false);
   }
@@ -78,6 +80,10 @@ export function GameSwitcher() {
                   </option>
                 ))}
               </select>
+              <label className="flex items-center gap-1.5 text-slate-400">
+                <input type="checkbox" checked={newNuzlocke} onChange={(e) => setNewNuzlocke(e.target.checked)} className="accent-red-400" />
+                Nuzlocke Mode
+              </label>
               <div className="flex gap-1.5">
                 <button
                   type="button"
