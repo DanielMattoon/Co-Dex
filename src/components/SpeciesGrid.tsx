@@ -32,7 +32,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 const GEN = Generations.get(9);
 const ALL_TYPES = [...GEN.types].map((t) => t.name).filter((t) => t !== '???');
 const BADGE_COLORS = ['#22d3ee', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
-const TILE_PX = 60;
+const TILE_PX = 72;
 
 type ViewMode = 'national' | 'regional' | 'type' | 'custom';
 
@@ -44,6 +44,10 @@ interface Tile {
   gender?: 'male' | 'female';
   /** Set only when the Variant Slide has physically pushed this specific form out as its own tile. */
   variety?: SpeciesVariety;
+  /** Set only when the Duplicate Slide has physically pushed this specific owned specimen out as its own tile. */
+  specimen?: VaultEntry;
+  /** True on exactly one specimen tile per slid-open duplicate group — the one that keeps the collapse control. */
+  duplicateSlideAnchor?: boolean;
 }
 
 interface BoxGroup {
@@ -152,6 +156,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const [slidOpenTiles, setSlidOpenTiles] = useState<Set<number>>(new Set());
   const [slidOpenBeforeMaster, setSlidOpenBeforeMaster] = useState<Set<number> | null>(null);
   const [openBadgeFor, setOpenBadgeFor] = useState<number | null>(null);
+  const [slidOpenDuplicates, setSlidOpenDuplicates] = useState<Set<string>>(new Set());
 
   const allInstances = useLiveQuery(() => db.game_instances.toArray(), []) ?? [];
   const allTitles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
@@ -273,6 +278,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
    * rather than silently disappearing.
    */
   function ownedForTile(tile: Tile): VaultEntry[] {
+    if (tile.specimen) return [tile.specimen];
     let list: VaultEntry[];
     if (tile.variety) {
       list = (ownedByPokemonId.get(tile.variety.pokemonId) ?? []).filter((e) => e.form === tile.variety!.name);
@@ -420,10 +426,46 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genderExpandedTiles, isCustom, hideCaught, shinyOnly, flaggedOnly, anomalousOnly, ownedByPokemonId]);
 
+  /** Groups multiple owned duplicates as one bucket to slide open — scoped per form/gender slot, so sliding one variety's duplicates never affects a sibling form's. */
+  function duplicateBucketKey(tile: Tile): string {
+    return `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.name ?? 'd'}`;
+  }
+
+  // Duplicate Slide — the same push-over mechanic as the Variant Slide, one
+  // level down: sliding a species open pushes each individually-owned
+  // specimen in as its own tile (collapsible back with the same control).
+  const duplicateExpandedTiles = useMemo(() => {
+    if (isCustom || viewMode === 'type') return tiles;
+    const out: Tile[] = [];
+    for (const t of tiles) {
+      const owned = ownedForTile(t);
+      const key = duplicateBucketKey(t);
+      if (owned.length > 1 && slidOpenDuplicates.has(key)) {
+        owned.forEach((specimen, i) => out.push({ ...t, specimen, duplicateSlideAnchor: i === 0 }));
+      } else {
+        out.push(t);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tiles, isCustom, viewMode, slidOpenDuplicates, ownedByPokemonId, variantsByTile]);
+
+  function toggleDuplicateSlide(tile: Tile, e: ReactMouseEvent) {
+    e.stopPropagation();
+    const key = duplicateBucketKey(tile);
+    setSlidOpenDuplicates((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   // --- Box-group chunking (National/Regional/Custom) — same real
   // game-accurate box_width/boxes_slots math the game itself uses; Gender
-  // View and the Variant Slide just mean there are more physical tiles to
-  // chunk, so more boxes appear, exactly like adding Pokémon does today.
+  // View, the Variant Slide, and the Duplicate Slide just mean there are
+  // more physical tiles to chunk, so more boxes appear, exactly like adding
+  // Pokémon does today.
   const boxGroups: BoxGroup[] = useMemo(() => {
     if (viewMode === 'type') return [];
     const groups: BoxGroup[] = [];
@@ -438,7 +480,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       current = [];
     }
 
-    for (const tile of tiles) {
+    for (const tile of duplicateExpandedTiles) {
       const gen = getGeneration(tile.pokemonId);
       if (viewMode === 'national' && separateBox && currentGen !== null && gen !== currentGen && current.length > 0) {
         while (current.length < boxSize) current.push(null);
@@ -451,7 +493,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     }
     pushBox();
     return groups;
-  }, [tiles, viewMode, separateBox, boxSize, boxLabels]);
+  }, [duplicateExpandedTiles, viewMode, separateBox, boxSize, boxLabels]);
 
   const typeGroups = useMemo(() => {
     if (viewMode !== 'type') return [];
@@ -548,6 +590,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   }
 
   function handleTileClick(tile: Tile, e: ReactMouseEvent) {
+    if (tile.specimen) {
+      setMultiSelected(new Set());
+      setExpandedPokemonId(tile.variety?.pokemonId ?? tile.pokemonId);
+      setExpandedGender(tile.gender ?? null);
+      setExpandedVarietyName(tile.variety && !tile.variety.isDefault ? tile.variety.name : null);
+      setSelectedUuid(tile.specimen.uuid);
+      return;
+    }
     const owned = ownedForTile(tile);
     if (e.shiftKey && owned.length > 0) {
       setSelectedUuid(null);
@@ -803,10 +853,15 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const isMultiSelected = multiSelected.has(tile.pokemonId);
     const isReservedTarget = reservedTargetSpecies.has(toID(tile.name));
     const isLocked = owned.some((o) => o.breeding_project_lock?.is_locked);
+    const dupKey = duplicateBucketKey(tile);
+    const dupSlidOpen = slidOpenDuplicates.has(dupKey);
+    const showDuplicateToggle = tile.specimen ? tile.duplicateSlideAnchor === true : owned.length > 1;
     // variety.name (not pokemonId) is what's guaranteed unique here — every
     // form-layer entry (Unown's 28 letters) shares one base pokemonId, so
     // keying on pokemonId collided every one of them into the same React key.
-    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.name ?? 'd'}`;
+    // A specimen's own uuid is added on top since a slid-open duplicate
+    // group shares everything else about the tile.
+    const tileKey = `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.name ?? 'd'}-${tile.specimen?.uuid ?? 's'}`;
     const genderMark = tile.gender ? (tile.gender === 'male' ? ' ♂' : ' ♀') : '';
     const formMark = tile.variety ? ` (${formVarietyLabel(tile.variety, tile.name)})` : '';
 
@@ -875,6 +930,19 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             {slidOpen ? '◂' : '▸'}
           </button>
         )}
+        {showDuplicateToggle && (
+          <button
+            type="button"
+            onClick={(e) => toggleDuplicateSlide(tile, e)}
+            title={dupSlidOpen ? 'Collapse duplicates back into one tile' : `Slide open ${owned.length} duplicates as their own tiles`}
+            className={[
+              'absolute bottom-0.5 z-10 flex h-3.5 w-3.5 items-center justify-center rounded-sm border border-blue-700/60 bg-slate-950/90 text-[9px] leading-none text-blue-300 hover:bg-blue-900/60',
+              hasVariants && (!tile.variety || tile.variety.isDefault) ? 'right-[18px]' : 'right-0.5',
+            ].join(' ')}
+          >
+            {dupSlidOpen ? '◂' : '▸'}
+          </button>
+        )}
         {tileBadges.length > 0 && (
           <button
             type="button"
@@ -910,14 +978,16 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             })}
           </div>
         )}
-        <button
-          type="button"
-          onClick={(e) => handleDetailClick(tile, e)}
-          title={`${titleCase(displayName)} details`}
-          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
-        >
-          ⓘ
-        </button>
+        {!tile.specimen && (
+          <button
+            type="button"
+            onClick={(e) => handleDetailClick(tile, e)}
+            title={`${titleCase(displayName)} details`}
+            className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
+          >
+            ⓘ
+          </button>
+        )}
       </div>
     );
   }

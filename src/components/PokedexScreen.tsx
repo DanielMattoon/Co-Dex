@@ -87,7 +87,7 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
                 <img
                   src={getSpriteUrl(s.pokemonId)}
                   alt={s.name}
-                  className="h-8 w-8"
+                  className="h-10 w-10"
                   style={{ imageRendering: 'pixelated' }}
                 />
                 {caught && <span className="absolute -right-0.5 -top-0.5 text-emerald-400">✓</span>}
