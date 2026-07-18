@@ -32,7 +32,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 const GEN = Generations.get(9);
 const ALL_TYPES = [...GEN.types].map((t) => t.name).filter((t) => t !== '???');
 const BADGE_COLORS = ['#22d3ee', '#f472b6', '#fbbf24', '#a78bfa', '#34d399'];
-const TILE_PX = 72;
+const TILE_PX = 80;
 
 type ViewMode = 'national' | 'regional' | 'type' | 'custom';
 
@@ -575,17 +575,32 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     window.addEventListener('mouseup', onUp);
   }
 
+  /**
+   * A collapsed multi-form tile has to catch AS a specific form (its
+   * default one) rather than a bare 'default' form string — otherwise a
+   * catch made before ever sliding a species open wouldn't match any of
+   * its forms' `form` field once slid open later, and would effectively
+   * vanish from every individual form tile (it'd still count toward the
+   * collapsed aggregate, but never resolve back to "Unown-A is caught").
+   */
+  function resolveDefaultVariety(pokemonId: number): SpeciesVariety | undefined {
+    const varieties = variantsByTile.get(pokemonId) ?? [];
+    if (varieties.length <= 1) return undefined;
+    return varieties.find((v) => v.isDefault) ?? varieties[0];
+  }
+
   async function catchOneForTile(tile: Tile) {
+    const variety = tile.variety ?? resolveDefaultVariety(tile.pokemonId);
     await quickCatch({
       gameInstanceId,
-      species: titleCase(tile.variety?.name ?? tile.name),
-      pokemonId: tile.variety?.pokemonId ?? tile.pokemonId,
+      species: titleCase(variety?.name ?? tile.name),
+      pokemonId: variety?.pokemonId ?? tile.pokemonId,
       level: 5,
       shiny: false,
       nickname: null,
       ball: null,
       gender: tile.gender ?? 'genderless',
-      form: tile.variety?.name ?? 'default',
+      form: variety?.name ?? 'default',
     });
   }
 
@@ -682,16 +697,17 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   // specimen) is where add/remove duplicate controls live.
   async function catchAnotherInDrawer(name: string | undefined) {
     if (expandedPokemonId === null || !name) return;
+    const variety = expandedVarietyName ? undefined : resolveDefaultVariety(expandedPokemonId);
     await quickCatch({
       gameInstanceId,
-      species: titleCase(name),
-      pokemonId: expandedPokemonId,
+      species: titleCase(variety?.name ?? name),
+      pokemonId: variety?.pokemonId ?? expandedPokemonId,
       level: 5,
       shiny: false,
       nickname: null,
       ball: null,
       gender: expandedGender ?? 'genderless',
-      form: expandedVarietyName ?? 'default',
+      form: expandedVarietyName ?? variety?.name ?? 'default',
     });
   }
 
@@ -788,15 +804,19 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     const byId = new Map<number, MarkAllTarget>();
     for (const t of list) {
       if (!t || byId.has(t.pokemonId)) continue;
-      byId.set(t.pokemonId, { pokemonId: t.pokemonId, species: titleCase(t.name), gender: 'genderless', form: 'default' });
+      const variety = resolveDefaultVariety(t.pokemonId);
+      byId.set(t.pokemonId, {
+        pokemonId: variety?.pokemonId ?? t.pokemonId,
+        species: titleCase(variety?.name ?? t.name),
+        gender: 'genderless',
+        form: variety?.name ?? 'default',
+      });
     }
     return [...byId.values()];
   }
 
   async function handleMarkAll(scopeKey: string, targets: MarkAllTarget[]) {
-    await markAll(scopeKey, gameInstanceId, targets, (t) =>
-      quickCatch({ gameInstanceId, species: t.species, pokemonId: t.pokemonId, level: 5, shiny: false, nickname: null, ball: null, gender: t.gender, form: t.form }),
-    );
+    await markAll(scopeKey, gameInstanceId, targets);
     setMassActionMessage(null);
   }
 

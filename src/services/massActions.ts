@@ -1,5 +1,6 @@
-import { db } from '../db/schema';
+import { db, type VaultEntry } from '../db/schema';
 import { recordSnapshot } from './versionHistory';
+import { GRAVEYARD_BOX_INDEX } from './boxes';
 
 /**
  * Mark All / Unmark All / Revert to Selected (PRD 6.1, 6.8), scoped to
@@ -30,19 +31,68 @@ export interface MarkAllTarget {
   form: string;
 }
 
+/**
+ * One `bulkAdd` for every new catch instead of N separate `quickCatch`
+ * calls — each of those would otherwise do its own full-database Version
+ * History snapshot AND its own fresh vault query for a free box index,
+ * making Mark All effectively O(N) full-table reads for N species. The
+ * mass-action-level snapshot above already covers undo for the whole
+ * batch, so per-catch snapshots here would be pure, expensive redundancy.
+ */
+async function bulkCatchDefaults(gameInstanceId: string, targets: MarkAllTarget[]): Promise<void> {
+  if (targets.length === 0) return;
+  await db.transaction('rw', db.vault, async () => {
+    const existing = await db.vault.where('current_game_instance_id').equals(gameInstanceId).toArray();
+    const occupied = new Set(existing.filter((e) => e.box_index !== GRAVEYARD_BOX_INDEX).map((e) => e.box_index));
+    let nextIndex = 0;
+    function allocateBoxIndex(): number {
+      while (occupied.has(nextIndex)) nextIndex++;
+      occupied.add(nextIndex);
+      return nextIndex++;
+    }
+    const now = new Date().toISOString();
+    const rows: VaultEntry[] = targets.map((t) => {
+      const boxIndex = allocateBoxIndex();
+      return {
+        uuid: crypto.randomUUID(),
+        species: t.species,
+        pokemon_id: t.pokemonId,
+        nickname: null,
+        level: 5,
+        hp: 100,
+        dead: false,
+        gender: t.gender,
+        shiny: false,
+        form: t.form,
+        catchLocation: null,
+        origin_game_instance_id: gameInstanceId,
+        current_game_instance_id: gameInstanceId,
+        box_index: boxIndex,
+        captured_date: now,
+        ivs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+        evs: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+        moves: [],
+        held_item: null,
+        ball: null,
+        origin_pokemon_go: false,
+        tags: [],
+        reservation_status: { is_reserved: false, target_evolution_id: null },
+        breeding_project_lock: { is_locked: false, notes: null },
+        history_log: [{ timestamp: now, action: 'caught', details: 'Caught via Mark All.' }],
+        is_sandbox_anomalous: false,
+        sort_priority: boxIndex,
+      };
+    });
+    await db.vault.bulkAdd(rows);
+  });
+}
+
 /** Catches one of every uncaught target in scope, after snapshotting the scope's prior state. */
-export async function markAll(
-  scopeKey: string,
-  gameInstanceId: string,
-  targets: MarkAllTarget[],
-  catchOne: (target: MarkAllTarget) => Promise<void>,
-): Promise<void> {
+export async function markAll(scopeKey: string, gameInstanceId: string, targets: MarkAllTarget[]): Promise<void> {
   await recordSnapshot('mass_catch', `Mark All (${targets.length} species) in one dex/box`);
   const inScope = await snapshotScope(scopeKey, gameInstanceId, targets.map((t) => t.pokemonId));
   const ownedIds = new Set(inScope.map((e) => e.pokemon_id));
-  for (const t of targets) {
-    if (!ownedIds.has(t.pokemonId)) await catchOne(t);
-  }
+  await bulkCatchDefaults(gameInstanceId, targets.filter((t) => !ownedIds.has(t.pokemonId)));
 }
 
 /** Releases every specimen in scope, after snapshotting the scope's prior state. */
