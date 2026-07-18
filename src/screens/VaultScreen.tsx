@@ -11,8 +11,8 @@ import { ShinyHuntWidget } from '../components/ShinyHuntWidget';
 type Tab = 'vault' | 'pokedex' | 'types' | 'items' | 'shinyhunt';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'vault', label: 'Vault' },
-  { id: 'pokedex', label: 'Pokédex' },
+  { id: 'vault', label: 'Living Dex' },
+  { id: 'pokedex', label: 'Pokédex (Reference)' },
   { id: 'types', label: 'Types' },
   { id: 'items', label: 'Items' },
   { id: 'shinyhunt', label: 'Shiny Hunt' },

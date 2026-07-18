@@ -8,7 +8,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Box', icon: '▦', color: 'text-cyan-300' },
+  { to: '/', label: 'Dex', icon: '▦', color: 'text-cyan-300' },
   { to: '/map', label: 'Map', icon: '▲', color: 'text-emerald-300' },
   { to: '/team', label: 'Team', icon: '✦', color: 'text-fuchsia-300' },
   { to: '/collection', label: 'Shelf', icon: '▣', color: 'text-amber-300' },
@@ -18,7 +18,8 @@ const NAV_ITEMS: NavItem[] = [
 
 /**
  * Always-accessible bottom control deck. Lives entirely in the thumb zone
- * (PRD 2.1) and doubles as the "Back to Box" anchor (PRD 2.2) via the Box tab.
+ * (PRD 2.1) and doubles as the "Back to Box" anchor (PRD 2.2) via the Dex tab
+ * (the unified Living Dex that replaced the separate Box screen).
  */
 export function BottomNav() {
   return (

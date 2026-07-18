@@ -3,16 +3,16 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type ShinyHuntLogEntry } from '../db/schema';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
-import { listAllSpeciesWithIds } from '../services/pokeapi';
+import { listAllSpeciesWithIds, getRegionalDex } from '../services/pokeapi';
 import { getWantsAndNeeds, type WantsAndNeeds } from '../services/wantsAndNeeds';
 import { downloadTextFile } from '../services/csv';
 
 /**
  * Auto-Generated Visual Dashboards (PRD 15.4) — retro-styled charts
- * computed from local data, no manual pivot tables. Regional dex order
- * isn't modeled in this build (no per-game regional dex mapping data is
- * available here), so the completion bar below is national + per-active-save
- * rather than region-by-region.
+ * computed from local data, no manual pivot tables. The per-save completion
+ * bar now uses the active title's real regional dex (PRD 6.8's Regional
+ * View), not literal box storage capacity, since the Living Dex is a
+ * species grid rather than a physical PC box.
  */
 export function Dashboards() {
   const { gameInstanceId } = useActiveGameInstance();
@@ -29,6 +29,7 @@ export function Dashboards() {
   const huntLog = useLiveQuery(() => db.shiny_hunt_log.toArray(), []) ?? [];
 
   const [totalSpecies, setTotalSpecies] = useState(1025);
+  const [regionalTotal, setRegionalTotal] = useState(0);
   const [wants, setWants] = useState<WantsAndNeeds | null>(null);
 
   useEffect(() => {
@@ -36,9 +37,22 @@ export function Dashboards() {
     getWantsAndNeeds().then(setWants).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    if (!gameTitle) {
+      setRegionalTotal(0);
+      return;
+    }
+    getRegionalDex(gameTitle.pokedex_slugs)
+      .then((dex) => setRegionalTotal(dex.length))
+      .catch((e) => {
+        console.error('[Dashboards] regional dex fetch failed', e);
+        setRegionalTotal(0);
+      });
+  }, [gameTitle]);
+
   const activeOwned = activeEntries.filter((e) => e.box_index !== GRAVEYARD_BOX_INDEX);
-  const saveTotal = gameTitle ? gameTitle.box_count * gameTitle.boxes_slots : 0;
-  const savePct = saveTotal > 0 ? clamp01(activeOwned.length / saveTotal) : 0;
+  const activeOwnedSpecies = new Set(activeOwned.map((e) => e.pokemon_id)).size;
+  const savePct = regionalTotal > 0 ? clamp01(activeOwnedSpecies / regionalTotal) : 0;
 
   function exportShoppingList() {
     if (!wants) return;
@@ -54,8 +68,8 @@ export function Dashboards() {
           label={`National Living Dex (${new Set(allVault.map((e) => e.pokemon_id)).size}/${totalSpecies})`}
           pct={clamp01(new Set(allVault.map((e) => e.pokemon_id)).size / totalSpecies)}
         />
-        {gameTitle && (
-          <CompletionBar label={`${gameTitle.name} boxes filled (${activeOwned.length}/${saveTotal})`} pct={savePct} />
+        {gameTitle && regionalTotal > 0 && (
+          <CompletionBar label={`${gameTitle.name} Regional Dex (${activeOwnedSpecies}/${regionalTotal})`} pct={savePct} />
         )}
       </div>
 

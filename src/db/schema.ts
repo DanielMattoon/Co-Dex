@@ -6,6 +6,12 @@ export interface GameTitle {
   generation: number;
   box_count: number;
   boxes_slots: number;
+  /**
+   * PokeAPI regional Pokédex resource name(s) for this title, in display
+   * order (e.g. Kalos titles split across 3 sub-dexes: central/coastal/
+   * mountain). Drives the Living Dex's Regional View (PRD 6.8).
+   */
+  pokedex_slugs: string[];
 }
 
 export interface GameInstance {

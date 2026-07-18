@@ -27,16 +27,24 @@ body {
   font-family: var(--font-mono);
 }
 
-/* Retro-modern console frame: 4:3 handheld bounds, dark-glass panels (Section 2.3, 4). */
-.console-frame {
-  aspect-ratio: 4 / 3;
-  max-width: 480px;
-  margin: 0 auto;
-  border-radius: 12px;
-  border: 2px solid rgba(148, 163, 184, 0.4);
-  background: rgba(15, 23, 42, 0.6);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+/*
+ * The Co-Dex Warning Protocol (PRD 17): reserved exclusively for real
+ * mechanical/legality errors (sandbox anomalies, illegal transfers, over-
+ * capacity storage) — never decorative, so it always reads as "something
+ * is actually wrong."
+ */
+@keyframes warning-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35);
+  }
+}
+
+.warning-pulse {
+  animation: warning-pulse 1.4s ease-in-out infinite;
 }
 
 ::-webkit-scrollbar {

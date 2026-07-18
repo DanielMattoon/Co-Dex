@@ -99,6 +99,41 @@ export async function listAllSpeciesWithIds(): Promise<SpeciesWithId[]> {
   });
 }
 
+// --- Regional Dex (PRD 6.8's Regional View) ---
+
+export interface RegionalDexEntry {
+  name: string;
+  pokemonId: number;
+  regionalNumber: number;
+}
+
+interface RawPokedexResponse {
+  pokemon_entries: { entry_number: number; pokemon_species: { name: string; url: string } }[];
+}
+
+/**
+ * A game title's real regional Pokédex — only the species obtainable in
+ * that title, in that title's own numbering (PRD 6.8). Some titles split
+ * across multiple PokeAPI pokedex resources (e.g. Kalos: central/coastal/
+ * mountain); `slugs` are concatenated in order with numbering continuing
+ * across them, matching how those games present a single unified dex.
+ */
+export async function getRegionalDex(slugs: string[] | undefined): Promise<RegionalDexEntry[]> {
+  if (!slugs || slugs.length === 0) return [];
+  const dexes = await Promise.all(slugs.map((slug) => cachedFetch<RawPokedexResponse>(`${BASE}/pokedex/${slug}`)));
+  const entries: RegionalDexEntry[] = [];
+  let offset = 0;
+  for (const dex of dexes) {
+    const sorted = [...dex.pokemon_entries].sort((a, b) => a.entry_number - b.entry_number);
+    for (const entry of sorted) {
+      const id = Number(entry.pokemon_species.url.replace(/\/$/, '').split('/').pop());
+      entries.push({ name: entry.pokemon_species.name, pokemonId: id, regionalNumber: offset + entry.entry_number });
+    }
+    offset += sorted.length;
+  }
+  return entries;
+}
+
 // --- Item Dex (PRD 6.15) ---
 
 export interface ItemSummary {

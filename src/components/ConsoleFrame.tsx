@@ -3,26 +3,31 @@ import type { ReactNode } from 'react';
 interface ConsoleFrameProps {
   /** Passive readouts: title, artwork, status metrics. Never interactive. */
   header: ReactNode;
-  /** Primary content + controls. Must live in the bottom 60% thumb zone (PRD 2.1). */
+  /** Primary content + controls. */
   children: ReactNode;
   /** Always-accessible bottom control deck (nav). */
   nav: ReactNode;
 }
 
 /**
- * The handheld device shell: a 4:3 "screen" area (header + content) inside a
- * dark-glass bezel, with a fixed bottom control deck for nav — the "One-Handed
- * Thumb Zone" rule (PRD 2.1) and "Retro-Modern Console" aesthetic (PRD 2.3).
+ * The app shell: full-viewport, retro dark-glass theme, header pinned top
+ * and nav pinned bottom with the content area filling everything in
+ * between and scrolling independently. Previously a fixed 4:3 handheld
+ * frame capped at 480px — dropped in favor of using the whole page, since
+ * the Living Dex (and everything else) benefits from real width instead of
+ * being squeezed into a phone-sized bezel on desktop.
  */
 export function ConsoleFrame({ header, children, nav }: ConsoleFrameProps) {
   return (
-    <div className="flex min-h-full items-center justify-center bg-slate-950 p-4">
-      <div className="flex w-full max-w-[480px] flex-col overflow-hidden rounded-2xl border-2 border-slate-700/60 bg-slate-900/70 shadow-2xl shadow-black/50 backdrop-blur">
-        <div className="flex aspect-[4/3] flex-col overflow-hidden border-b-2 border-slate-700/60 bg-slate-950/60">
-          <div className="shrink-0 px-4 pt-4">{header}</div>
-          <div className="flex-1 overflow-y-auto px-4 pb-4">{children}</div>
-        </div>
-        <div className="shrink-0 bg-slate-900/90 p-3">{nav}</div>
+    <div className="flex h-full flex-col bg-slate-950">
+      <div className="shrink-0 border-b-2 border-slate-700/60 bg-slate-900/70 px-4 py-3 backdrop-blur sm:px-6">
+        <div className="mx-auto w-full max-w-[1400px]">{header}</div>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div className="mx-auto h-full w-full max-w-[1400px]">{children}</div>
+      </div>
+      <div className="shrink-0 border-t-2 border-slate-700/60 bg-slate-900/90 px-4 py-3 sm:px-6">
+        <div className="mx-auto w-full max-w-[1400px]">{nav}</div>
       </div>
     </div>
   );

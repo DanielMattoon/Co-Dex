@@ -4,17 +4,20 @@ import { db } from '../db/schema';
 import { GRAVEYARD_BOX_INDEX } from '../services/boxes';
 import { setNuzlockeMode, declareVictory } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
-import { BoxGrid } from './BoxGrid';
-import { LivingDexList } from './LivingDexList';
+import { SpeciesGrid } from './SpeciesGrid';
 import { QueryBar } from './QueryBar';
 import { getSpriteUrl } from '../services/pokeapi';
 import { getCatchNextTarget, type CatchNextTarget } from '../services/catchNext';
 import { parseQuery, matchesQuery } from '../services/queryGrammar';
 import { resolveOriginTitles } from '../services/originBadges';
 
-type ViewMode = 'box' | 'list';
-
-/** PC Box / Vault (PRD 6), with Nuzlocke enforcement (PRD 10) and Breeding Project Lock (PRD 8.4). */
+/**
+ * The Living Dex (PRD 6) — Box and Living Dex are the same screen: one tile
+ * per species, greyed out until caught, exactly like pokedextracker.com,
+ * with Co-Dex's specimen-level tracking layered underneath (IVs, shiny,
+ * nicknames, tags, trades). See SpeciesGrid for the grid itself; this
+ * component owns the surrounding Nuzlocke controls, search, and Graveyard.
+ */
 export function VaultList() {
   const { gameInstanceId, gameInstance, isNuzlockeMode: nuzlocke, ready, bootstrapError, retry } = useActiveGameInstance();
   const gameTitle = useLiveQuery(
@@ -30,7 +33,6 @@ export function VaultList() {
   const graveyard = (entries ?? []).filter((e) => e.box_index === GRAVEYARD_BOX_INDEX);
   const caughtIds = new Set(allActive.map((e) => e.pokemon_id));
 
-  const [viewMode, setViewMode] = useState<ViewMode>('box');
   const [catchNext, setCatchNext] = useState<CatchNextTarget | null | undefined>(undefined);
   const [confirmingVictory, setConfirmingVictory] = useState(false);
   const [query, setQuery] = useState('');
@@ -45,11 +47,12 @@ export function VaultList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries]);
 
-  const active = useMemo(() => {
+  const matchingPokemonIds = useMemo(() => {
     const trimmed = query.trim();
-    if (!trimmed) return allActive;
+    if (!trimmed) return null;
     const parsed = parseQuery(trimmed);
-    return allActive.filter((e) => matchesQuery(e, parsed, { originTitleByInstanceId: originTitles }));
+    const matches = allActive.filter((e) => matchesQuery(e, parsed, { originTitleByInstanceId: originTitles }));
+    return new Set(matches.map((e) => e.pokemon_id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allActive, query, originTitles]);
 
@@ -121,34 +124,18 @@ export function VaultList() {
       {gameInstance?.is_victory && <p className="text-amber-300">🏆 Nuzlocke Champion — this run is won!</p>}
 
       <div className="flex items-center gap-2">
-        <div className="flex gap-1.5">
-          {(['box', 'list'] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setViewMode(mode)}
-              className={[
-                'rounded border px-2 py-0.5 text-[10px] capitalize',
-                viewMode === mode
-                  ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
-                  : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-              ].join(' ')}
-            >
-              {mode === 'box' ? 'Box' : 'Living Dex'}
-            </button>
-          ))}
-        </div>
+        <QueryBar value={query} onChange={setQuery} />
         <button
           type="button"
           onClick={rollCatchNext}
-          className="ml-auto rounded border border-emerald-500/40 px-2 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/10"
+          className="shrink-0 rounded border border-emerald-500/40 px-2 py-1 text-[10px] text-emerald-300 hover:bg-emerald-500/10"
         >
           Catch Next?
         </button>
       </div>
-
-      <QueryBar value={query} onChange={setQuery} />
-      {query.trim() && <p className="text-slate-500">{active.length} match{active.length === 1 ? '' : 'es'}</p>}
+      {query.trim() && matchingPokemonIds && (
+        <p className="text-slate-500">{matchingPokemonIds.size} matching species</p>
+      )}
 
       {catchNext !== undefined && (
         <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-2">
@@ -163,20 +150,15 @@ export function VaultList() {
         </div>
       )}
 
-      {allActive.length === 0 && graveyard.length === 0 && (
-        <p className="text-slate-500">Nothing caught yet — visit the Map to catch your first wild encounter.</p>
-      )}
-
-      {gameInstanceId && viewMode === 'box' && (
-        <BoxGrid
-          entries={active}
-          boxSize={gameTitle?.boxes_slots ?? 30}
-          boxCount={gameTitle?.box_count ?? 14}
-          nuzlocke={nuzlocke}
+      {gameInstanceId && (
+        <SpeciesGrid
+          entries={allActive}
           gameInstanceId={gameInstanceId}
+          gameTitle={gameTitle}
+          nuzlocke={nuzlocke}
+          matchingPokemonIds={matchingPokemonIds}
         />
       )}
-      {viewMode === 'list' && <LivingDexList entries={active} nuzlocke={nuzlocke} />}
 
       {graveyard.length > 0 && (
         <div className="rounded-lg border border-red-900/40 bg-red-950/20 p-2">
