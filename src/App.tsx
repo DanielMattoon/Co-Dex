@@ -6,6 +6,7 @@ import { GameSwitcher } from './components/GameSwitcher';
 import { MapScreen } from './components/MapScreen';
 import { LinkCable } from './components/LinkCable';
 import { CollectionShelf } from './components/CollectionShelf';
+import { SharedProfileView } from './components/SharedProfileView';
 import { VaultScreen } from './screens/VaultScreen';
 import { TeamScreen } from './screens/TeamScreen';
 import { BackupScreen } from './screens/BackupScreen';
@@ -48,12 +49,23 @@ function RoutedContent() {
   );
 }
 
+// A shared profile link opens outside the console-frame chrome (no bottom
+// nav, no active Dex) — whoever opens it is very likely not the person who
+// generated it, so it shouldn't look like they're "using the app."
+function RootByPath() {
+  const location = useLocation();
+  if (location.pathname === '/profile/view') return <SharedProfileView />;
+  return (
+    <ConsoleFrame header={<AppHeader />} nav={<BottomNav />}>
+      <RoutedContent />
+    </ConsoleFrame>
+  );
+}
+
 function App() {
   return (
     <HashRouter>
-      <ConsoleFrame header={<AppHeader />} nav={<BottomNav />}>
-        <RoutedContent />
-      </ConsoleFrame>
+      <RootByPath />
     </HashRouter>
   );
 }

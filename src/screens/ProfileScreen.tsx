@@ -5,17 +5,21 @@ import { getOrCreateTrainerProfile, setTrainerName } from '../services/gameInsta
 import { computeBadges, type Badge } from '../services/badges';
 import { renderCertificate, downloadCertificate } from '../services/certificates';
 import { getWantsAndNeeds, type WantsAndNeeds } from '../services/wantsAndNeeds';
+import { buildProfileShareUrl, type ShareableProfile } from '../services/profileShare';
 import { Dashboards } from '../components/Dashboards';
 
 /**
  * Trainer Profile / Social Trade Hub (PRD 12.1, 12.4). Ships the Passive
- * Bulletin half of Section 12: a self-contained, exportable snapshot view
- * (stats, badges, Wants & Needs) generated entirely from local Vault data.
- * There's no hosted profiles service in this $0/serverless build (PRD
- * 12.3), so "shareable URL" here means the Export Snapshot download below —
- * a JSON card meant for pasting into Discord/a trade post, not a live link.
- * The async Active Trade Inquiry flow (12.2) stays designed-for-not-built,
- * exactly as the PRD specifies, since it needs a persistent backend.
+ * Bulletin half of Section 12: a self-contained snapshot view (stats,
+ * badges, Wants & Needs) generated entirely from local Vault data. Now that
+ * Co-Dex has a real persistent URL, "Share Profile" builds a genuinely real
+ * link: the whole snapshot is encoded straight into the URL (no backend,
+ * no account, nothing to host beyond the static site already there) — a
+ * snapshot, not a live view, so it won't reflect changes made after
+ * sharing. The Export Snapshot download remains for pasting into Discord/a
+ * trade post as a file instead of a link. The async Active Trade Inquiry
+ * flow (12.2) stays designed-for-not-built, exactly as the PRD specifies,
+ * since it needs a persistent backend.
  */
 export function ProfileScreen() {
   const profile = useLiveQuery(() => getOrCreateTrainerProfile(), []);
@@ -27,6 +31,8 @@ export function ProfileScreen() {
   const [wants, setWants] = useState<WantsAndNeeds | null>(null);
   const [nameDraft, setNameDraft] = useState('');
   const [editingName, setEditingName] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
     // Depend on the array references, not their lengths — useLiveQuery hands
@@ -49,8 +55,8 @@ export function ProfileScreen() {
     setEditingName(false);
   }
 
-  function exportSnapshot() {
-    const snapshot = {
+  function buildSnapshot(): ShareableProfile {
+    return {
       trainerName: profile?.trainer_name ?? 'Trainer',
       stats: { totalSpecimens: allVault.length, uniqueSpecies, shinyCount, gamesOwned: new Set(allCopies.map((c) => c.catalog_id)).size },
       badgesEarned: (badges ?? []).filter((b) => b.earned).map((b) => b.name),
@@ -60,13 +66,28 @@ export function ProfileScreen() {
       },
       generatedAt: new Date().toISOString(),
     };
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+  }
+
+  function exportSnapshot() {
+    const blob = new Blob([JSON.stringify(buildSnapshot(), null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'codex-profile-snapshot.json';
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function shareProfile() {
+    const url = buildProfileShareUrl(buildSnapshot());
+    setShareUrl(url);
+    setShareCopied(false);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+    } catch {
+      // Clipboard access can be denied — the link is still shown below to copy manually.
+    }
   }
 
   function handleCertificate(badge: Badge) {
@@ -114,13 +135,35 @@ export function ProfileScreen() {
             <p className="text-slate-500">Trades</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={exportSnapshot}
-          className="mt-2 w-full rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-cyan-300"
-        >
-          Export Profile Snapshot (JSON)
-        </button>
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={() => void shareProfile()}
+            className="flex-1 rounded-md border border-cyan-500/50 bg-cyan-500/20 px-2 py-1 text-cyan-300"
+          >
+            Share Profile (link)
+          </button>
+          <button
+            type="button"
+            onClick={exportSnapshot}
+            className="flex-1 rounded-md border border-cyan-500/50 bg-cyan-500/10 px-2 py-1 text-cyan-300"
+          >
+            Export Snapshot (JSON)
+          </button>
+        </div>
+        {shareUrl && (
+          <div className="mt-2 rounded border border-slate-700 bg-slate-900/60 p-2">
+            <p className="mb-1 text-slate-500">
+              {shareCopied ? 'Copied to clipboard — this is a snapshot, it won\'t update after you share it.' : "Copy this link — it's a snapshot, it won't update after you share it."}
+            </p>
+            <input
+              readOnly
+              value={shareUrl}
+              onFocus={(e) => e.target.select()}
+              className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-300 outline-none"
+            />
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border border-slate-700 bg-slate-800/40 p-2">
