@@ -35,12 +35,12 @@ async function cachedFetchText(url: string): Promise<string> {
  *    res/field/scripts/scripts_{location}.s, cross-referenced against one
  *    JSON file per trainer under res/trainers/data/.
  *
- * Only ROUTES are covered for GBA titles right now — their pret map folder
- * name (e.g. "Route102") converts predictably from PokeAPI's location name
- * ("hoenn-route-102"); towns/caves use one-off names PokeAPI doesn't expose
- * a pattern for, so they're left out rather than guessed. Platinum's file
- * naming is close enough to PokeAPI's own location names to cover every
- * location type, not just routes.
+ * GBA titles cover every location type, not just routes: rather than a
+ * hand-typed name-mapping table, the real `data/maps/` folder listing is
+ * fetched once (GitHub's contents API, cached) and matched by normalized
+ * prefix against PokeAPI's location name — "mt-moon" finds every one of
+ * "MtMoon_1F"/"MtMoon_B1F"/"MtMoon_B2F" and their data is aggregated, since
+ * a user picking "Mt. Moon" as a whole reasonably expects everything in it.
  */
 
 const RAW_BASE = 'https://raw.githubusercontent.com/pret';
@@ -90,14 +90,41 @@ const GBA_REPO: Record<'firered' | 'emerald', string> = {
   emerald: 'pokeemerald',
 };
 
-/** Only routes convert predictably; "hoenn-route-102" -> "Route102", "kanto-route-1" -> "Route1". */
-function toGbaMapName(locationName: string, regionPrefix: string): string | null {
-  const prefix = `${regionPrefix}-`;
-  if (!locationName.startsWith(prefix)) return null;
-  const rest = locationName.slice(prefix.length);
-  const match = rest.match(/^(?:sea-)?route-(\d+)$/);
-  if (!match) return null;
-  return `Route${match[1]}`;
+interface GithubContentEntry {
+  name: string;
+  type: string;
+}
+
+let gbaMapFolderCache: Map<'firered' | 'emerald', string[]> = new Map();
+
+/**
+ * The real `data/maps/` folder listing for a GBA title, fetched once via
+ * GitHub's contents API and cached forever after. Multi-room locations
+ * (Mt. Moon, SS Anne, the Safari Zone) split into several folders
+ * ("MtMoon_1F", "MtMoon_B1F", ...) that a normalized-prefix match against
+ * PokeAPI's single location name ("mt-moon" -> "mtmoon") finds all of —
+ * verified against Diglett's Cave, SS Anne, Granite Cave, Meteor Falls,
+ * Victory Road, and Safari Zone in both games before relying on it.
+ */
+async function getGbaMapFolders(game: 'firered' | 'emerald'): Promise<string[]> {
+  const cached = gbaMapFolderCache.get(game);
+  if (cached) return cached;
+  const entries = await cachedFetch<GithubContentEntry[]>(`https://api.github.com/repos/pret/${GBA_REPO[game]}/contents/data/maps`);
+  const folders = entries.filter((e) => e.type === 'dir').map((e) => e.name);
+  gbaMapFolderCache.set(game, folders);
+  return folders;
+}
+
+function normalizeForMatch(name: string): string {
+  return name.replace(/[-_]/g, '').toLowerCase();
+}
+
+/** Every real map folder whose name starts with this location's normalized name — one for a simple route, many for a multi-room dungeon/building. */
+async function getGbaMapFoldersForLocation(game: 'firered' | 'emerald', locationName: string, regionPrefix: string): Promise<string[]> {
+  const withoutRegion = locationName.startsWith(`${regionPrefix}-`) ? locationName.slice(regionPrefix.length + 1) : locationName;
+  const target = normalizeForMatch(withoutRegion.replace(/^sea-/, ''));
+  const folders = await getGbaMapFolders(game);
+  return folders.filter((f) => normalizeForMatch(f).startsWith(target));
 }
 
 interface GbaTrainerRaw {
@@ -172,13 +199,18 @@ async function getGbaParties(game: 'firered' | 'emerald') {
   return map;
 }
 
-async function getGbaLocationData(game: 'firered' | 'emerald', mapName: string): Promise<LiveLocationBattleData> {
-  let scriptText: string;
-  try {
-    scriptText = await cachedFetchText(`${RAW_BASE}/${GBA_REPO[game]}/master/data/maps/${mapName}/scripts.inc`);
-  } catch {
-    return { trainers: [], items: [], note: "No script file found for this location — it may not exist in this game's Kanto/Hoenn, or its map folder name differs from the route pattern." };
+async function getGbaLocationData(game: 'firered' | 'emerald', locationName: string, regionPrefix: string): Promise<LiveLocationBattleData> {
+  const mapFolders = await getGbaMapFoldersForLocation(game, locationName, regionPrefix);
+  if (mapFolders.length === 0) {
+    return { trainers: [], items: [], note: "No matching map folder found for this location in the real game data — its name may differ from PokeAPI's." };
   }
+
+  const scriptTexts = await Promise.all(
+    mapFolders.map((mapName) =>
+      cachedFetchText(`${RAW_BASE}/${GBA_REPO[game]}/master/data/maps/${mapName}/scripts.inc`).catch(() => ''),
+    ),
+  );
+  const scriptText = scriptTexts.join('\n');
 
   const trainerIds = [...new Set([...scriptText.matchAll(/trainerbattle_\w+\s+(TRAINER_\w+)/g)].map((m) => m[1]))];
   const itemConstants = [...new Set([...scriptText.matchAll(/(?:giveitem|finditem)\s+(ITEM_\w+)/g)].map((m) => m[1]))];
@@ -269,14 +301,10 @@ export async function getLocationTrainersAndItems(
   locationName: string,
 ): Promise<LiveLocationBattleData> {
   if (gameTitleId === 'firered') {
-    const mapName = toGbaMapName(locationName, 'kanto');
-    if (!mapName) return { trainers: [], items: [], note: "Trainer/item data is only wired up for routes so far — this location's map name doesn't follow the route pattern." };
-    return getGbaLocationData('firered', mapName);
+    return getGbaLocationData('firered', locationName, 'kanto');
   }
   if (gameTitleId === 'emerald') {
-    const mapName = toGbaMapName(locationName, 'hoenn');
-    if (!mapName) return { trainers: [], items: [], note: "Trainer/item data is only wired up for routes so far — this location's map name doesn't follow the route pattern." };
-    return getGbaLocationData('emerald', mapName);
+    return getGbaLocationData('emerald', locationName, 'hoenn');
   }
   if (gameTitleId === 'platinum') {
     return getPlatinumLocationData(locationName);

@@ -136,7 +136,7 @@ export function LiveMapScreen({ gameTitleId, config }: LiveMapScreenProps) {
     <div className="flex h-full flex-col gap-2 text-xs">
       <p className="text-slate-500">
         Real wild encounters for {config.region.charAt(0).toUpperCase() + config.region.slice(1)} (PokeAPI), plus real trainer
-        battles and item pickups (the pret decompilation project) — routes only for now on GBA titles.
+        battles and item pickups (the pret decompilation project).
       </p>
       {error && <p className="text-red-400">{error}</p>}
       <div className="flex flex-1 gap-2 overflow-hidden">
