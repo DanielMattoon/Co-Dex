@@ -5,6 +5,11 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Relative asset paths so the build works unmodified at any subpath —
+  // GitHub Pages project sites serve from /<repo-name>/, and this avoids
+  // needing to hardcode that repo name here. HashRouter (src/App.tsx)
+  // means no server-side rewrite rule is needed for client-side routes.
+  base: './',
   plugins: [
     react(),
     tailwindcss(),
@@ -15,7 +20,8 @@ export default defineConfig({
         name: 'Co-Dex',
         short_name: 'Co-Dex',
         description: 'A non-commercial, local-first Pokémon companion app.',
-        start_url: '/',
+        start_url: '.',
+        scope: '.',
         display: 'standalone',
         background_color: '#0b0c10',
         theme_color: '#0f172a',
