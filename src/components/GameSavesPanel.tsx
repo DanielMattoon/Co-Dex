@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
-import { createGameInstance, ensureSeedTitles, setActiveGameInstance } from '../services/gameInstances';
+import { createGameInstance, ensureSeedTitles, instanceDisplayName, renameGameInstance, setActiveGameInstance, sortByReleaseOrder } from '../services/gameInstances';
 import { setNuzlockeMode } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
@@ -26,20 +26,34 @@ export function GameSavesPanel() {
     () => db.game_instances.toArray().then((rows) => rows.sort((a, b) => a.created_date.localeCompare(b.created_date))),
     [],
   );
-  const titles = useLiveQuery(() => db.game_titles.toArray(), []);
-  const titleById = new Map((titles ?? []).map((t) => [t.game_title_id, t]));
+  const rawTitles = useLiveQuery(() => db.game_titles.toArray(), []);
+  const titles = sortByReleaseOrder(rawTitles ?? []);
+  const titleById = new Map(titles.map((t) => [t.game_title_id, t]));
 
   const [newTitleId, setNewTitleId] = useState('');
   const [newNuzlocke, setNewNuzlocke] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   useEffect(() => {
-    if (!newTitleId && titles && titles.length > 0) setNewTitleId(titles[0].game_title_id);
+    if (!newTitleId && titles.length > 0) setNewTitleId(titles[0].game_title_id);
   }, [titles, newTitleId]);
 
   async function handleCreate() {
     if (!newTitleId) return;
     await createGameInstance(newTitleId, newNuzlocke);
     setNewNuzlocke(false);
+  }
+
+  function startRename(instanceId: string, currentCustomName: string | null) {
+    setRenamingId(instanceId);
+    setRenameDraft(currentCustomName ?? '');
+  }
+
+  async function saveRename() {
+    if (!renamingId) return;
+    await renameGameInstance(renamingId, renameDraft);
+    setRenamingId(null);
   }
 
   return (
@@ -55,8 +69,33 @@ export function GameSavesPanel() {
                 key={instance.game_instance_id}
                 className="flex items-center justify-between rounded-md border border-slate-700 bg-slate-900/60 p-2"
               >
-                <div>
-                  <p className="text-slate-200">{title?.name ?? instance.game_title_id}</p>
+                <div className="min-w-0 flex-1">
+                  {renamingId === instance.game_instance_id ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && void saveRename()}
+                        autoFocus
+                        placeholder={title?.name ?? instance.game_title_id}
+                        className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
+                      />
+                      <button type="button" onClick={() => void saveRename()} className="shrink-0 text-cyan-300">✓</button>
+                      <button type="button" onClick={() => setRenamingId(null)} className="shrink-0 text-slate-400">✕</button>
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-slate-200">
+                      {instanceDisplayName(instance, title)}
+                      <button
+                        type="button"
+                        onClick={() => startRename(instance.game_instance_id, instance.custom_name)}
+                        title="Rename this Dex"
+                        className="text-slate-500 hover:text-slate-300"
+                      >
+                        ✎
+                      </button>
+                    </p>
+                  )}
                   <p className="text-slate-500">
                     {instance.isNuzlockeMode ? 'Nuzlocke' : 'Standard'} · {new Date(instance.created_date).toLocaleDateString()}
                   </p>
@@ -98,7 +137,7 @@ export function GameSavesPanel() {
             onChange={(e) => setNewTitleId(e.target.value)}
             className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-slate-200 outline-none focus:border-cyan-400"
           >
-            {(titles ?? []).map((t) => (
+            {titles.map((t) => (
               <option key={t.game_title_id} value={t.game_title_id}>
                 {t.name}
               </option>

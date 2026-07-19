@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { getSpriteUrl, listAllSpeciesWithIds, type SpeciesWithId } from '../services/pokeapi';
+import { getRegionalDex, getSpriteUrl, listAllSpeciesWithIds, type SpeciesWithId } from '../services/pokeapi';
 import { getGeneration } from '../services/boxes';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { db, HOME_GENERATION } from '../db/schema';
@@ -21,6 +21,7 @@ interface PokedexScreenProps {
  */
 export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
   const [allSpecies, setAllSpecies] = useState<SpeciesWithId[]>([]);
+  const [regionalDex, setRegionalDex] = useState<SpeciesWithId[]>([]);
   const [hideCaught, setHideCaught] = useState(false);
   const [selected, setSelected] = useState<SpeciesWithId | null>(null);
   const [query, setQuery] = useState('');
@@ -35,10 +36,26 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
     listAllSpeciesWithIds().then(setAllSpecies);
   }, []);
 
+  useEffect(() => {
+    if (!gameTitle || gameTitle.has_expanded_national_dex) {
+      setRegionalDex([]);
+      return;
+    }
+    getRegionalDex(gameTitle.pokedex_slugs)
+      .then((dex) => setRegionalDex(dex.map((d) => ({ pokemonId: d.pokemonId, name: d.name }))))
+      .catch(() => setRegionalDex([]));
+  }, [gameTitle]);
+
+  // Titles without a real National Dex feature (Let's Go onward's "Dexit"
+  // games, Brilliant Diamond/Shining Pearl, Legends: Arceus) have no
+  // broader universe than their own region — a generation cutoff would
+  // otherwise list hundreds of species that title's world never had.
   const species =
-    gameTitle && gameTitle.generation !== HOME_GENERATION
-      ? allSpecies.filter((s) => getGeneration(s.pokemonId) <= gameTitle.generation)
-      : allSpecies;
+    gameTitle && !gameTitle.has_expanded_national_dex && regionalDex.length > 0
+      ? regionalDex
+      : gameTitle && gameTitle.generation !== HOME_GENERATION
+        ? allSpecies.filter((s) => getGeneration(s.pokemonId) <= gameTitle.generation)
+        : allSpecies;
 
   const visible = species
     .filter((s) => !hideCaught || !caughtPokemonIds.has(s.pokemonId))

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/schema';
-import { createGameInstance, setActiveGameInstance } from '../services/gameInstances';
+import { createGameInstance, instanceDisplayName, renameGameInstance, setActiveGameInstance, sortByReleaseOrder } from '../services/gameInstances';
 import { setNuzlockeMode } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -21,12 +21,15 @@ export function GameSwitcher() {
   const [creating, setCreating] = useState(false);
   const [newTitleId, setNewTitleId] = useState('');
   const [newNuzlocke, setNewNuzlocke] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState('');
 
   const instances = useLiveQuery(
     () => db.game_instances.toArray().then((rows) => rows.sort((a, b) => a.created_date.localeCompare(b.created_date))),
     [],
   ) ?? [];
-  const titles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
+  const rawTitles = useLiveQuery(() => db.game_titles.toArray(), []) ?? [];
+  const titles = sortByReleaseOrder(rawTitles);
   const titleById = new Map(titles.map((t) => [t.game_title_id, t]));
   const activeTitle = gameInstance ? titleById.get(gameInstance.game_title_id) : undefined;
 
@@ -52,6 +55,17 @@ export function GameSwitcher() {
     setOpen(false);
   }
 
+  function startRename(instanceId: string, currentCustomName: string | null) {
+    setRenamingId(instanceId);
+    setRenameDraft(currentCustomName ?? '');
+  }
+
+  async function saveRename() {
+    if (!renamingId) return;
+    await renameGameInstance(renamingId, renameDraft);
+    setRenamingId(null);
+  }
+
   return (
     <div className="relative" data-game-switcher>
       <button
@@ -59,7 +73,7 @@ export function GameSwitcher() {
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1.5 rounded border border-slate-700 px-2 py-1 text-[10px] text-slate-200 hover:bg-slate-800/60"
       >
-        <span className="text-cyan-300">{activeTitle?.name ?? 'No Dex'}</span>
+        <span className="text-cyan-300">{gameInstance ? instanceDisplayName(gameInstance, activeTitle) : 'No Dex'}</span>
         {nuzlocke && <span className="rounded bg-red-500/20 px-1 text-red-300">Nuzlocke</span>}
         <span className="text-slate-500">{open ? '▲' : '▼'}</span>
       </button>
@@ -113,8 +127,24 @@ export function GameSwitcher() {
             {instances.map((instance) => {
               const title = titleById.get(instance.game_title_id);
               const active = instance.game_instance_id === gameInstanceId;
+              if (renamingId === instance.game_instance_id) {
+                return (
+                  <li key={instance.game_instance_id} className="flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/5 p-1">
+                    <input
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && void saveRename()}
+                      autoFocus
+                      placeholder={title?.name ?? instance.game_title_id}
+                      className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-slate-200 outline-none focus:border-cyan-400"
+                    />
+                    <button type="button" onClick={() => void saveRename()} className="shrink-0 text-cyan-300">✓</button>
+                    <button type="button" onClick={() => setRenamingId(null)} className="shrink-0 text-slate-400">✕</button>
+                  </li>
+                );
+              }
               return (
-                <li key={instance.game_instance_id}>
+                <li key={instance.game_instance_id} className="flex items-center gap-1">
                   <button
                     type="button"
                     disabled={active}
@@ -123,12 +153,20 @@ export function GameSwitcher() {
                       setOpen(false);
                     }}
                     className={[
-                      'flex w-full items-center justify-between rounded border px-2 py-1 text-left',
+                      'flex flex-1 items-center justify-between rounded border px-2 py-1 text-left',
                       active ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-300 hover:bg-slate-800/60',
                     ].join(' ')}
                   >
-                    <span>{title?.name ?? instance.game_title_id}</span>
-                    {active && <span className="text-[9px] text-emerald-400">Active</span>}
+                    <span className="truncate">{instanceDisplayName(instance, title)}</span>
+                    {active && <span className="shrink-0 text-[9px] text-emerald-400">Active</span>}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startRename(instance.game_instance_id, instance.custom_name)}
+                    title="Rename this Dex"
+                    className="shrink-0 rounded border border-slate-700 px-1.5 py-1 text-slate-500 hover:bg-slate-800/60 hover:text-slate-300"
+                  >
+                    ✎
                   </button>
                 </li>
               );

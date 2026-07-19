@@ -228,10 +228,17 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   const overCapacity = capacity > 0 && entries.length > capacity;
 
   // National/Type/Custom View are accurate to the active game: a title only
-  // "knows about" species that existed by its own generation (Regional View
-  // is already game-specific by construction; Pokémon HOME's generation
-  // sentinel never excludes anything, so it alone shows the full roster).
+  // "knows about" species that existed by its own generation (Pokémon
+  // HOME's generation sentinel never excludes anything, so it alone shows
+  // the full roster). Titles without a real National Dex feature (Let's Go
+  // onward's "Dexit" games, Brilliant Diamond/Shining Pearl, Legends:
+  // Arceus) have no broader universe than their own region at all — for
+  // those, National View just IS the Regional View, since a generation
+  // cutoff would otherwise show hundreds of species that title's world
+  // never had (e.g. Brilliant Diamond showing all ~1000 species through
+  // Gen 8 instead of just Sinnoh's ~493).
   const baseTiles: Tile[] = useMemo(() => {
+    if (gameTitle && !gameTitle.has_expanded_national_dex && regionalDex.length > 0) return regionalDex;
     if (viewMode === 'regional' && regionalDex.length > 0) return regionalDex;
     const all = nationalSpecies.map((s) => ({ pokemonId: s.pokemonId, name: s.name }));
     if (!gameTitle) return all;

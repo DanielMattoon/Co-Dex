@@ -23,6 +23,20 @@ export interface GameTitle {
   pokedex_slugs: string[];
   /** True only for titles that can receive a Pokémon GO transfer directly (Let's Go Pikachu/Eevee, HOME). */
   allows_pokemon_go: boolean;
+  /**
+   * True for titles with a real National Dex feature broader than their own
+   * region (every mainline game through Gen 7: Kanto through Alola all let
+   * you eventually see/catch species beyond their own region). False for
+   * titles whose Pokédex is permanently capped to their own region with no
+   * such expansion — Let's Go Pikachu/Eevee, Sword/Shield onward (the
+   * "Dexit" games), Brilliant Diamond/Shining Pearl, Legends: Arceus,
+   * Scarlet/Violet. For those, National View just IS the Regional View —
+   * using `generation` as a cutoff would otherwise show hundreds of species
+   * (e.g. all of Kanto through Sword/Shield) that title's world never had.
+   */
+  has_expanded_national_dex: boolean;
+  /** Sequential real-world release order (0 = earliest) — game_title_id is an arbitrary string, not sortable, so title pickers need this to show games chronologically. */
+  release_order: number;
 }
 
 /** Pokémon HOME has no real generation ceiling — every species released so far fits. */
@@ -35,6 +49,8 @@ export interface GameInstance {
   created_date: string;
   /** Set once a Nuzlocke run is declared won (PRD 12.4's "first Nuzlocke victory" badge). */
   is_victory: boolean;
+  /** User-chosen nickname for this save, shown as "{custom_name} (Game Title)" wherever the Dex is picked; null shows just the game title, unchanged. */
+  custom_name: string | null;
 }
 
 export interface TrainerProfile {
