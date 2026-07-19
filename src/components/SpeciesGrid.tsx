@@ -604,13 +604,25 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     });
   }
 
+  /** Tapping a tile toggles catch state: uncaught catches one, already-caught releases one (confirming first if it's been adjusted off default) — adding a 2nd/3rd duplicate is a detail-panel action now, not a tap. */
+  function releaseOneForTile(tile: Tile) {
+    const owned = ownedForTile(tile);
+    if (owned.length === 0) return;
+    const target = owned.reduce((a, b) => (a.captured_date >= b.captured_date ? a : b));
+    const reasons = specimenRealDataReasons(target);
+    if (reasons.length === 0) {
+      void bulkDelete([target.uuid]);
+    } else {
+      setConfirmingRelease({ uuid: target.uuid, species: target.species, reasons });
+    }
+  }
+
   function handleTileClick(tile: Tile, e: ReactMouseEvent) {
     if (tile.specimen) {
-      setMultiSelected(new Set());
-      setExpandedPokemonId(tile.variety?.pokemonId ?? tile.pokemonId);
-      setExpandedGender(tile.gender ?? null);
-      setExpandedVarietyName(tile.variety && !tile.variety.isDefault ? tile.variety.name : null);
-      setSelectedUuid(tile.specimen.uuid);
+      // A slid-open specimen tile IS a specific duplicate already — tapping
+      // it releases that one (same confirm-if-adjusted gate), rather than
+      // opening its detail (that's what the ⓘ button is for now).
+      if (!e.shiftKey) handleRemoveDrawerSpecimen(tile.specimen);
       return;
     }
     const owned = ownedForTile(tile);
@@ -626,25 +638,11 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
       return;
     }
     setMultiSelected(new Set());
-    void catchOneForTile(tile);
-  }
-
-  function handleMinusClick(tile: Tile, e: ReactMouseEvent) {
-    e.stopPropagation();
-    const owned = ownedForTile(tile);
-    if (owned.length === 0) return;
-    const target = owned.reduce((a, b) => (a.captured_date >= b.captured_date ? a : b));
-    const reasons = specimenRealDataReasons(target);
-    if (reasons.length === 0) {
-      void bulkDelete([target.uuid]);
+    if (owned.length > 0) {
+      releaseOneForTile(tile);
     } else {
-      setConfirmingRelease({ uuid: target.uuid, species: target.species, reasons });
+      void catchOneForTile(tile);
     }
-  }
-
-  function handlePlusClick(tile: Tile, e: ReactMouseEvent) {
-    e.stopPropagation();
-    void catchOneForTile(tile);
   }
 
   async function confirmRelease() {
@@ -684,7 +682,7 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
   function handleDetailClick(tile: Tile, e: ReactMouseEvent) {
     e.stopPropagation();
     setMultiSelected(new Set());
-    setSelectedUuid(null);
+    setSelectedUuid(tile.specimen?.uuid ?? null);
     setExpandedPokemonId(tile.variety?.pokemonId ?? tile.pokemonId);
     setExpandedGender(tile.gender ?? null);
     // A form-layer variety (Unown's letters, cosplay costumes) shares its
@@ -929,16 +927,8 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
           #{tile.regionalNumber ?? tile.pokemonId}
           {genderMark}
         </span>
-        {isOwned && (
-          <div className="absolute left-0.5 top-0.5 z-10 flex items-center gap-0.5 rounded bg-slate-950/90 px-0.5 text-[8px] leading-none">
-            <button type="button" onClick={(e) => handleMinusClick(tile, e)} title="Remove one" className="px-0.5 text-red-300 hover:text-red-200">
-              −
-            </button>
-            <span className="text-slate-200">{owned.length}</span>
-            <button type="button" onClick={(e) => handlePlusClick(tile, e)} title="Add another" className="px-0.5 text-cyan-300 hover:text-cyan-200">
-              +
-            </button>
-          </div>
+        {owned.length > 1 && (
+          <span className="absolute left-0.5 top-0.5 z-10 rounded bg-slate-950/90 px-1 text-[8px] leading-none text-slate-200">×{owned.length}</span>
         )}
         {hasVariants && (!tile.variety || tile.variety.isDefault) && (
           <button
@@ -998,16 +988,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             })}
           </div>
         )}
-        {!tile.specimen && (
-          <button
-            type="button"
-            onClick={(e) => handleDetailClick(tile, e)}
-            title={`${titleCase(displayName)} details`}
-            className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
-          >
-            ⓘ
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={(e) => handleDetailClick(tile, e)}
+          title={`${titleCase(displayName)} details`}
+          className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full border border-slate-600 bg-slate-950/90 text-[9px] leading-none text-cyan-300 hover:bg-slate-800 group-hover:flex group-focus-within:flex"
+        >
+          ⓘ
+        </button>
       </div>
     );
   }
