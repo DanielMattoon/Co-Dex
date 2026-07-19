@@ -9,10 +9,12 @@ import {
   type GameMapConfig,
   type LiveEncounter,
 } from '../services/mapLive';
+import { getLocationTrainersAndItems, type LiveLocationBattleData } from '../services/mapTrainersItems';
 import { canCatchOnRoute, registerCatch } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
 
 interface LiveMapScreenProps {
+  gameTitleId: string;
   config: GameMapConfig;
 }
 
@@ -43,7 +45,7 @@ const METHOD_LABELS: Record<string, string> = {
  * here: PokeAPI doesn't model either, so faking them would mean guessing —
  * this only ever shows encounter data that's actually real.
  */
-export function LiveMapScreen({ config }: LiveMapScreenProps) {
+export function LiveMapScreen({ gameTitleId, config }: LiveMapScreenProps) {
   const { gameInstanceId, isNuzlockeMode: nuzlockeActive } = useActiveGameInstance();
   const [locations, setLocations] = useState<{ name: string }[] | null>(null);
   const [query, setQuery] = useState('');
@@ -51,6 +53,7 @@ export function LiveMapScreen({ config }: LiveMapScreenProps) {
   const [areas, setAreas] = useState<{ name: string }[] | null>(null);
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [encounters, setEncounters] = useState<LiveEncounter[] | null>(null);
+  const [battleData, setBattleData] = useState<LiveLocationBattleData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [catchError, setCatchError] = useState<string | null>(null);
   const [routeCatchable, setRouteCatchable] = useState(true);
@@ -83,6 +86,14 @@ export function LiveMapScreen({ config }: LiveMapScreenProps) {
       .then(setEncounters)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load encounters'));
   }, [selectedArea, config.version]);
+
+  useEffect(() => {
+    setBattleData(null);
+    if (!selectedLocation) return;
+    getLocationTrainersAndItems(gameTitleId, selectedLocation)
+      .then(setBattleData)
+      .catch(() => setBattleData({ trainers: [], items: [], note: 'Failed to load trainer/item data for this location.' }));
+  }, [selectedLocation, gameTitleId]);
 
   useEffect(() => {
     if (!gameInstanceId || !selectedArea) return;
@@ -124,8 +135,8 @@ export function LiveMapScreen({ config }: LiveMapScreenProps) {
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
       <p className="text-slate-500">
-        Real wild encounters for {config.region.charAt(0).toUpperCase() + config.region.slice(1)}, live from PokeAPI — trainer
-        battles and item locations aren't modeled by any public API, so they're left out rather than guessed.
+        Real wild encounters for {config.region.charAt(0).toUpperCase() + config.region.slice(1)} (PokeAPI), plus real trainer
+        battles and item pickups (the pret decompilation project) — routes only for now on GBA titles.
       </p>
       {error && <p className="text-red-400">{error}</p>}
       <div className="flex flex-1 gap-2 overflow-hidden">
@@ -215,6 +226,43 @@ export function LiveMapScreen({ config }: LiveMapScreenProps) {
                   );
                 })}
               </ul>
+            )}
+
+            {battleData && battleData.trainers.length > 0 && (
+              <div className="mt-3 flex flex-col gap-2">
+                <p className="font-retro text-[9px] text-slate-300">Trainers ({battleData.trainers.length})</p>
+                {battleData.trainers.map((t) => (
+                  <div key={t.id} className="rounded border border-slate-700 bg-slate-900/50 p-2">
+                    <p className="text-slate-200">
+                      {t.trainerClass} {t.name} {t.doubleBattle && <span className="text-amber-400">(Double Battle)</span>}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {t.party.map((mon, i) => (
+                        <div key={i} className="flex flex-col items-center">
+                          {mon.pokemonId !== null && (
+                            <img src={getSpriteUrl(mon.pokemonId)} alt={mon.species} className="h-8 w-8" style={{ imageRendering: 'pixelated' }} />
+                          )}
+                          <span className="text-slate-500">
+                            {mon.species} Lv.{mon.level}
+                          </span>
+                          {mon.heldItem && <span className="text-amber-300">{mon.heldItem}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {battleData && battleData.items.length > 0 && (
+              <div className="mt-3">
+                <p className="font-retro text-[9px] text-slate-300">Items</p>
+                <p className="text-slate-400">{battleData.items.join(', ')}</p>
+              </div>
+            )}
+
+            {battleData?.note && (
+              <p className="mt-3 text-slate-600">{battleData.note}</p>
             )}
           </div>
         </div>

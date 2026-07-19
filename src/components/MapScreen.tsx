@@ -50,7 +50,7 @@ export function MapScreen() {
   );
   const liveConfig = gameTitle ? GAME_MAP_CONFIG[gameTitle.game_title_id] : undefined;
 
-  if (liveConfig) return <LiveMapScreen config={liveConfig} />;
+  if (liveConfig && gameTitle) return <LiveMapScreen gameTitleId={gameTitle.game_title_id} config={liveConfig} />;
   return <SampleMapScreen />;
 }
 
