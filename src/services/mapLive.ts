@@ -26,6 +26,9 @@ export interface GameMapConfig {
 }
 
 export const GAME_MAP_CONFIG: Record<string, GameMapConfig> = {
+  red: { region: 'kanto', version: 'red' },
+  blue: { region: 'kanto', version: 'blue' },
+  yellow: { region: 'kanto', version: 'yellow' },
   firered: { region: 'kanto', version: 'firered' },
   emerald: { region: 'hoenn', version: 'emerald' },
   platinum: { region: 'sinnoh', version: 'platinum' },

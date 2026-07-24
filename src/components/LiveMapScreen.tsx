@@ -12,6 +12,8 @@ import {
 import { getLocationTrainersAndItems, type LiveLocationBattleData } from '../services/mapTrainersItems';
 import { canCatchOnRoute, registerCatch } from '../services/nuzlocke';
 import { useActiveGameInstance } from '../hooks/useActiveGameInstance';
+import { REGION_LAYOUTS } from '../services/regionLayouts';
+import { RegionMap } from './RegionMap';
 
 interface LiveMapScreenProps {
   gameTitleId: string;
@@ -47,8 +49,10 @@ const METHOD_LABELS: Record<string, string> = {
  */
 export function LiveMapScreen({ gameTitleId, config }: LiveMapScreenProps) {
   const { gameInstanceId, isNuzlockeMode: nuzlockeActive } = useActiveGameInstance();
+  const regionLayout = REGION_LAYOUTS[config.region];
   const [locations, setLocations] = useState<{ name: string }[] | null>(null);
   const [query, setQuery] = useState('');
+  const [mapView, setMapView] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [areas, setAreas] = useState<{ name: string }[] | null>(null);
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
@@ -140,31 +144,55 @@ export function LiveMapScreen({ gameTitleId, config }: LiveMapScreenProps) {
       </p>
       {error && <p className="text-red-400">{error}</p>}
       <div className="flex flex-1 gap-2 overflow-hidden">
-        <div className="flex w-2/5 flex-col gap-1.5">
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search locations…"
-            className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
-          />
-          <ul className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40">
-            {locations === null && <li className="p-2 text-slate-500">Loading…</li>}
-            {filteredLocations.map((l) => (
-              <li key={l.name}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedLocation(l.name)}
-                  className={[
-                    'w-full px-2 py-1 text-left hover:bg-slate-700/60',
-                    selectedLocation === l.name ? 'bg-slate-700/60 text-cyan-300' : 'text-slate-300',
-                  ].join(' ')}
-                >
-                  {locationLabel(l.name)}
-                </button>
-              </li>
-            ))}
-            {locations !== null && filteredLocations.length === 0 && <li className="p-2 text-slate-500">No matches.</li>}
-          </ul>
+        <div className="flex w-2/5 flex-col gap-1.5 overflow-hidden">
+          {regionLayout && (
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setMapView(true)}
+                className={['flex-1 rounded border px-2 py-1', mapView ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
+              >
+                Map
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapView(false)}
+                className={['flex-1 rounded border px-2 py-1', !mapView ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300' : 'border-slate-700 text-slate-400'].join(' ')}
+              >
+                List
+              </button>
+            </div>
+          )}
+          {regionLayout && mapView ? (
+            <RegionMap nodes={regionLayout} selected={selectedLocation} caughtLocations={new Set()} onSelect={setSelectedLocation} />
+          ) : (
+            <>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search locations…"
+                className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
+              />
+              <ul className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40">
+                {locations === null && <li className="p-2 text-slate-500">Loading…</li>}
+                {filteredLocations.map((l) => (
+                  <li key={l.name}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLocation(l.name)}
+                      className={[
+                        'w-full px-2 py-1 text-left hover:bg-slate-700/60',
+                        selectedLocation === l.name ? 'bg-slate-700/60 text-cyan-300' : 'text-slate-300',
+                      ].join(' ')}
+                    >
+                      {locationLabel(l.name)}
+                    </button>
+                  </li>
+                ))}
+                {locations !== null && filteredLocations.length === 0 && <li className="p-2 text-slate-500">No matches.</li>}
+              </ul>
+            </>
+          )}
         </div>
 
         <div className="flex w-3/5 flex-col gap-1.5 overflow-hidden">

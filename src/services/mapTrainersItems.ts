@@ -319,5 +319,12 @@ export async function getLocationTrainersAndItems(
     // SoulSilver shares the exact same repo/engine, same gap.
     return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — HeartGold/SoulSilver's decompilation project hasn't reverse-engineered its field scripts into readable text." };
   }
+  if (gameTitleId === 'red' || gameTitleId === 'blue' || gameTitleId === 'yellow') {
+    // pokered/pokeyellow (pret) exist and are thoroughly decompiled, but in
+    // hand-written Game Boy assembly (.asm), not the C headers this
+    // pipeline's GBA parser understands — a real future source, just a
+    // third parsing engine this pass didn't build.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — Red/Blue/Yellow's decompilation project uses a different source format (Game Boy assembly) this pipeline doesn't parse yet." };
+  }
   return { trainers: [], items: [], note: null };
 }
