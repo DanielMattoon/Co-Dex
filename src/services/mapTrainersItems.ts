@@ -326,6 +326,33 @@ export async function getLocationTrainersAndItems(
     // third parsing engine this pass didn't build.
     return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — Red/Blue/Yellow's decompilation project uses a different source format (Game Boy assembly) this pipeline doesn't parse yet." };
   }
+  if (gameTitleId === 'leafgreen') {
+    // LeafGreen lives in the same pret repo as FireRed (pokefirered), but
+    // its version-specific map/trainer data wasn't verified separately —
+    // reusing the firered branch on unverified assumptions would risk
+    // showing FireRed's roster on a LeafGreen save, so this stays disclosed
+    // until that's actually checked.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — LeafGreen's decompilation shares FireRed's repo, but its version-specific data hasn't been verified separately." };
+  }
+  if (gameTitleId === 'gold' || gameTitleId === 'silver' || gameTitleId === 'crystal') {
+    // pokegold/pokecrystal (pret) exist but use their own older-era
+    // conventions, unverified against this pipeline's parsers.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — Gold/Silver/Crystal's decompilation uses a source format this pipeline hasn't been built to parse." };
+  }
+  if (gameTitleId === 'ruby' || gameTitleId === 'sapphire') {
+    // pokeruby (pret) is a real, separate repo from pokeemerald despite
+    // sharing Hoenn — its trainers.h/trainer_parties.h/scripts.inc layout
+    // hasn't been checked against this GBA parser's assumptions, so this
+    // stays honest rather than risk silently wrong data on a Ruby/Sapphire
+    // save from code only verified against Emerald's repo.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — Ruby/Sapphire's decompilation (a separate repo from Emerald's) hasn't been verified against this pipeline's parser." };
+  }
+  if (gameTitleId === 'diamond' || gameTitleId === 'pearl') {
+    // pokediamond (pret) exists and is Platinum's sibling engine, but
+    // unlike Platinum its res/trainers and res/field/scripts layout
+    // hasn't actually been checked — same reasoning as Ruby/Sapphire above.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — Diamond/Pearl's decompilation (a separate repo from Platinum's) hasn't been verified against this pipeline's parser." };
+  }
   return { trainers: [], items: [], note: null };
 }
 
