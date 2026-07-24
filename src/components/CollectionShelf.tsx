@@ -44,6 +44,13 @@ const CONSOLE_ORDER = [
   'Nintendo Switch',
 ];
 
+// Fixed pixel tiles (same approach as the Pokédex box grid's TILE_PX) —
+// keeps every tile the same real-world size instead of stretching to fill
+// whatever width the container happens to have, and lets us pad an
+// incomplete last row out into a full, even rectangle.
+const SHELF_TILE_PX = 92;
+const SHELF_COLUMNS = 4;
+
 function CatalogTile({
   item,
   owned,
@@ -60,6 +67,7 @@ function CatalogTile({
     <button
       type="button"
       onClick={onSelect}
+      style={{ width: SHELF_TILE_PX }}
       className={[
         'flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all',
         active ? 'border-cyan-400' : 'border-slate-700',
@@ -71,7 +79,10 @@ function CatalogTile({
         style={{ backgroundColor: color, boxShadow: `inset 0 0 0 3px rgba(0,0,0,0.25)` }}
       />
       <span className="text-[10px] text-slate-200">{item.name}</span>
-      <span className="text-[9px] text-slate-500">{item.release_year}</span>
+      <span className="text-[9px] text-slate-500">
+        {item.release_year}
+        {item.digital_only ? ' · Digital' : ''}
+      </span>
     </button>
   );
 }
@@ -100,6 +111,7 @@ function FamilyTile({
       type="button"
       onClick={onExpand}
       title={`Slide open ${count} ${label} titles`}
+      style={{ width: SHELF_TILE_PX }}
       className="flex flex-col items-center gap-1 rounded-lg border border-violet-500/40 bg-violet-500/10 p-2 text-center transition-all hover:bg-violet-500/20"
     >
       <div className="relative h-14 w-10">
@@ -149,10 +161,17 @@ export function CollectionShelf() {
   // Chronological, mainline-default, console-only — per the standing filter
   // defaults; mobile-only F2P titles never enter the catalog at all (see
   // collectibles.ts), so "consoles only" is already true by construction.
+  // "digital" is a synthetic filter value (not a real platform) that cuts
+  // across hardware to isolate eShop-only titles regardless of which
+  // console they ran on.
   const scopedCatalog = useMemo(() => {
     return [...catalog]
       .filter((c) => (mainlineOnly ? c.is_mainline : true))
-      .filter((c) => consoleFilter === 'all' || c.platform === consoleFilter)
+      .filter((c) => {
+        if (consoleFilter === 'all') return true;
+        if (consoleFilter === 'digital') return c.digital_only;
+        return c.platform === consoleFilter;
+      })
       .sort((a, b) => a.release_order - b.release_order);
   }, [catalog, mainlineOnly, consoleFilter]);
 
@@ -237,6 +256,7 @@ export function CollectionShelf() {
           className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300 outline-none focus:border-cyan-400"
         >
           <option value="all">All Consoles</option>
+          <option value="digital">Digital (eShop)</option>
           {availableConsoles.map((platform) => (
             <option key={platform} value={platform}>
               {platform}
@@ -245,40 +265,49 @@ export function CollectionShelf() {
         </select>
       </div>
 
-      <div className="grid flex-1 auto-rows-min grid-cols-4 gap-2 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-2">
-        {displayList.map((entry) =>
-          entry.kind === 'family' ? (
-            <FamilyTile
-              key={entry.key}
-              label={entry.label}
-              count={entry.items.length}
-              ownedCount={entry.items.filter((i) => ownedCatalogIds.has(i.catalog_id)).length}
-              onExpand={() => toggleFamily(entry.key)}
-            />
-          ) : (
-            <div key={entry.item.catalog_id} className="relative">
-              {entry.item.franchise && (
-                <button
-                  type="button"
-                  onClick={() => toggleFamily(entry.item.franchise!)}
-                  title={`Collapse ${FRANCHISE_LABEL[entry.item.franchise] ?? entry.item.franchise} back into one tile`}
-                  className="absolute right-0.5 top-0.5 z-10 rounded bg-slate-950/70 px-1 text-[9px] text-violet-300 hover:text-violet-200"
-                >
-                  ↺
-                </button>
-              )}
-              <CatalogTile
-                item={entry.item}
-                owned={ownedCatalogIds.has(entry.item.catalog_id)}
-                active={selectedId === entry.item.catalog_id}
-                onSelect={() => {
-                  setSelectedId(entry.item.catalog_id);
-                  setFormOpen(false);
-                }}
+      <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-2">
+        <div
+          className="grid auto-rows-min justify-center gap-2"
+          style={{ gridTemplateColumns: `repeat(${SHELF_COLUMNS}, ${SHELF_TILE_PX}px)` }}
+        >
+          {displayList.map((entry) =>
+            entry.kind === 'family' ? (
+              <FamilyTile
+                key={entry.key}
+                label={entry.label}
+                count={entry.items.length}
+                ownedCount={entry.items.filter((i) => ownedCatalogIds.has(i.catalog_id)).length}
+                onExpand={() => toggleFamily(entry.key)}
               />
-            </div>
-          ),
-        )}
+            ) : (
+              <div key={entry.item.catalog_id} className="relative">
+                {entry.item.franchise && (
+                  <button
+                    type="button"
+                    onClick={() => toggleFamily(entry.item.franchise!)}
+                    title={`Collapse ${FRANCHISE_LABEL[entry.item.franchise] ?? entry.item.franchise} back into one tile`}
+                    className="absolute right-0.5 top-0.5 z-10 rounded bg-slate-950/70 px-1 text-[9px] text-violet-300 hover:text-violet-200"
+                  >
+                    ↺
+                  </button>
+                )}
+                <CatalogTile
+                  item={entry.item}
+                  owned={ownedCatalogIds.has(entry.item.catalog_id)}
+                  active={selectedId === entry.item.catalog_id}
+                  onSelect={() => {
+                    setSelectedId(entry.item.catalog_id);
+                    setFormOpen(false);
+                  }}
+                />
+              </div>
+            ),
+          )}
+          {/* Pad the last row out to a full width so the grid always ends as an even rectangle instead of a lone orphaned tile. */}
+          {Array.from({ length: (SHELF_COLUMNS - (displayList.length % SHELF_COLUMNS)) % SHELF_COLUMNS }).map((_, i) => (
+            <div key={`pad-${i}`} style={{ width: SHELF_TILE_PX }} className="rounded-lg border border-dashed border-slate-800/50" />
+          ))}
+        </div>
       </div>
 
       {selectedItem && (
@@ -386,7 +415,7 @@ function AddCopyForm({
           onChange={(e) => setCondition(e.target.value)}
           className="flex-1 rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-slate-200 outline-none focus:border-cyan-400"
         >
-          {['CIB', 'Loose', 'Sealed', 'New', 'Box-Only', 'Manual-Only'].map((c) => (
+          {['CIB', 'Loose', 'Sealed', 'New', 'Box-Only', 'Manual-Only', 'Digital'].map((c) => (
             <option key={c} value={c}>
               {c}
             </option>

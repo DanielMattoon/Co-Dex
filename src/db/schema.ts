@@ -185,6 +185,8 @@ export interface CollectibleCatalogItem {
   franchise: string | null;
   /** True world-release chronological order across the whole catalog, 0 = earliest. Not the same sequence as release_year, which is display-only (NA year). */
   release_order: number;
+  /** True for eShop/storefront-only titles that never had a physical cartridge or disc release — lets the console filter isolate them as "Digital" instead of lumping them under whichever hardware they ran on. */
+  digital_only: boolean;
 }
 
 export interface CollectibleGrading {
