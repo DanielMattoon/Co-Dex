@@ -29,6 +29,7 @@ export const GAME_MAP_CONFIG: Record<string, GameMapConfig> = {
   firered: { region: 'kanto', version: 'firered' },
   emerald: { region: 'hoenn', version: 'emerald' },
   platinum: { region: 'sinnoh', version: 'platinum' },
+  heartgold: { region: 'johto', version: 'heartgold' },
 };
 
 export interface LiveLocation {
