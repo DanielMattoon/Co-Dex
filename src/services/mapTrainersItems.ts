@@ -309,14 +309,15 @@ export async function getLocationTrainersAndItems(
   if (gameTitleId === 'platinum') {
     return getPlatinumLocationData(locationName);
   }
-  if (gameTitleId === 'heartgold') {
+  if (gameTitleId === 'heartgold' || gameTitleId === 'soulsilver') {
     // pokeheartgold (pret) exists but, unlike pokeplatinum, hasn't
     // decompiled its field scripts into readable text yet — trainer
     // battles and item placements are still compiled NARC-archive binaries
     // in that repo, not the plain-text scripts.inc/scripts_*.s this
     // pipeline parses. Disclosed here rather than silently showing
     // nothing, same principle as PokeAPI's own trainer/item gap above.
-    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — HeartGold's decompilation project hasn't reverse-engineered its field scripts into readable text." };
+    // SoulSilver shares the exact same repo/engine, same gap.
+    return { trainers: [], items: [], note: "Trainer and item data for this game isn't sourceable yet — HeartGold/SoulSilver's decompilation project hasn't reverse-engineered its field scripts into readable text." };
   }
   return { trainers: [], items: [], note: null };
 }

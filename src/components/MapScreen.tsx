@@ -51,10 +51,10 @@ export function MapScreen() {
   const liveConfig = gameTitle ? GAME_MAP_CONFIG[gameTitle.game_title_id] : undefined;
 
   if (liveConfig && gameTitle) return <LiveMapScreen gameTitleId={gameTitle.game_title_id} config={liveConfig} />;
-  return <SampleMapScreen />;
+  return <SampleMapScreen gameName={gameTitle?.name} />;
 }
 
-function SampleMapScreen() {
+function SampleMapScreen({ gameName }: { gameName?: string }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const zoneLayersRef = useRef<Map<string, L.Rectangle>>(new Map());
@@ -241,6 +241,11 @@ function SampleMapScreen() {
 
   return (
     <div className="flex h-full flex-col gap-2">
+      <div className="warning-pulse rounded-lg border border-amber-500/50 bg-amber-950/30 p-2 text-[10px] text-amber-300">
+        Demo only — not {gameName ?? 'this game'}'s real map. This is Kanto Route 1 sample content shown because a
+        real, live map for {gameName ?? 'this game'} hasn't been built yet.
+      </div>
+
       <div
         ref={containerRef}
         className="h-40 w-full shrink-0 rounded-lg border border-slate-700 bg-[repeating-conic-gradient(#1e293b_0%_25%,#0f172a_0%_50%)] bg-[length:24px_24px]"
