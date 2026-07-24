@@ -7,10 +7,42 @@ const PLATFORM_COLOR: Record<string, string> = {
   'Game Boy': '#22c55e',
   'Game Boy Color': '#eab308',
   'Game Boy Advance': '#8b5cf6',
+  'Nintendo 64': '#fb923c',
+  GameCube: '#818cf8',
   'Nintendo DS': '#38bdf8',
+  Wii: '#e2e8f0',
+  'Wii U': '#60a5fa',
   'Nintendo 3DS': '#f472b6',
   'Nintendo Switch': '#f87171',
 };
+
+const FRANCHISE_LABEL: Record<string, string> = {
+  stadium: 'Stadium',
+  snap: 'Snap',
+  colosseum: 'Colosseum / XD',
+  ranger: 'Ranger',
+  'mystery-dungeon': 'Mystery Dungeon',
+  pinball: 'Pinball',
+  pokepark: 'PokéPark',
+  pokken: 'Pokkén Tournament',
+  'detective-pikachu': 'Detective Pikachu',
+  trozei: 'Trozei',
+  rumble: 'Rumble',
+};
+
+/** Consoles present in the catalog, in hardware-generation order — drives the filter dropdown. */
+const CONSOLE_ORDER = [
+  'Game Boy',
+  'Game Boy Color',
+  'Game Boy Advance',
+  'Nintendo 64',
+  'GameCube',
+  'Nintendo DS',
+  'Wii',
+  'Wii U',
+  'Nintendo 3DS',
+  'Nintendo Switch',
+];
 
 function CatalogTile({
   item,
@@ -45,6 +77,44 @@ function CatalogTile({
 }
 
 /**
+ * A collapsed multi-entry spin-off series (Mystery Dungeon, Ranger, ...) —
+ * the same slide-open/collapse mechanic the Pokédex grid uses for
+ * multi-form species (SpeciesGrid's Variant Slide), applied here so a
+ * franchise with five sub-titles doesn't drown out standalone spin-offs at
+ * a glance. Tapping the tile itself slides it open into one tile per
+ * member; a family is never "owned" on its own, so it's never desaturated.
+ */
+function FamilyTile({
+  label,
+  count,
+  ownedCount,
+  onExpand,
+}: {
+  label: string;
+  count: number;
+  ownedCount: number;
+  onExpand: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      title={`Slide open ${count} ${label} titles`}
+      className="flex flex-col items-center gap-1 rounded-lg border border-violet-500/40 bg-violet-500/10 p-2 text-center transition-all hover:bg-violet-500/20"
+    >
+      <div className="relative h-14 w-10">
+        <div className="absolute inset-0 translate-x-1 translate-y-1 rounded-sm border-2 border-slate-900 bg-slate-700" />
+        <div className="absolute inset-0 rounded-sm border-2 border-slate-900 bg-violet-500" style={{ boxShadow: 'inset 0 0 0 3px rgba(0,0,0,0.25)' }} />
+      </div>
+      <span className="text-[10px] text-violet-200">{label}</span>
+      <span className="text-[9px] text-slate-500">
+        {ownedCount}/{count} · tap to expand
+      </span>
+    </button>
+  );
+}
+
+/**
  * Game Collection (PRD 22) — tracks physical media owned in real life,
  * separate from the Vault (which tracks in-game species). Catalog tiles use
  * original app-drawn placeholders rather than real box art (see
@@ -58,6 +128,9 @@ export function CollectionShelf() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [ownedOnly, setOwnedOnly] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [mainlineOnly, setMainlineOnly] = useState(true);
+  const [consoleFilter, setConsoleFilter] = useState('all');
+  const [slidOpenFamilies, setSlidOpenFamilies] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     ensureSeedCatalog().then(() => setReady(true));
@@ -67,11 +140,57 @@ export function CollectionShelf() {
   const allCopies = useLiveQuery(() => db.collectible_copies.toArray(), [ready]) ?? [];
 
   const ownedCatalogIds = useMemo(() => new Set(allCopies.map((c) => c.catalog_id)), [allCopies]);
-  const visibleCatalog = ownedOnly ? catalog.filter((c) => ownedCatalogIds.has(c.catalog_id)) : catalog;
+
+  const availableConsoles = useMemo(
+    () => CONSOLE_ORDER.filter((platform) => catalog.some((c) => c.platform === platform)),
+    [catalog],
+  );
+
+  // Chronological, mainline-default, console-only — per the standing filter
+  // defaults; mobile-only F2P titles never enter the catalog at all (see
+  // collectibles.ts), so "consoles only" is already true by construction.
+  const scopedCatalog = useMemo(() => {
+    return [...catalog]
+      .filter((c) => (mainlineOnly ? c.is_mainline : true))
+      .filter((c) => consoleFilter === 'all' || c.platform === consoleFilter)
+      .sort((a, b) => a.release_order - b.release_order);
+  }, [catalog, mainlineOnly, consoleFilter]);
+
+  const visibleCatalog = ownedOnly ? scopedCatalog.filter((c) => ownedCatalogIds.has(c.catalog_id)) : scopedCatalog;
+
+  // Group multi-entry spin-off series into one collapsed family tile unless
+  // that family has been slid open (mirrors SpeciesGrid's Variant Slide).
+  const displayList = useMemo(() => {
+    const out: Array<{ kind: 'item'; item: CollectibleCatalogItem } | { kind: 'family'; key: string; label: string; items: CollectibleCatalogItem[] }> = [];
+    const seenFamilies = new Set<string>();
+    for (const item of visibleCatalog) {
+      if (item.franchise && !slidOpenFamilies.has(item.franchise)) {
+        if (seenFamilies.has(item.franchise)) continue;
+        seenFamilies.add(item.franchise);
+        const members = visibleCatalog.filter((c) => c.franchise === item.franchise);
+        if (members.length > 1) {
+          out.push({ kind: 'family', key: item.franchise, label: FRANCHISE_LABEL[item.franchise] ?? item.franchise, items: members });
+          continue;
+        }
+      }
+      out.push({ kind: 'item', item });
+    }
+    return out;
+  }, [visibleCatalog, slidOpenFamilies]);
+
+  function toggleFamily(key: string) {
+    setSlidOpenFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   const selectedItem = catalog.find((c) => c.catalog_id === selectedId) ?? null;
   const selectedCopies = allCopies.filter((c) => c.catalog_id === selectedId);
 
-  const completion = catalog.length > 0 ? Math.round((ownedCatalogIds.size / catalog.length) * 100) : 0;
+  const completion = scopedCatalog.length > 0 ? Math.round((ownedCatalogIds.size / scopedCatalog.length) * 100) : 0;
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
@@ -80,36 +199,86 @@ export function CollectionShelf() {
           <div className="h-full bg-cyan-400 transition-all" style={{ width: `${completion}%` }} />
         </div>
         <span className="shrink-0 text-slate-400">
-          {ownedCatalogIds.size}/{catalog.length}
+          {scopedCatalog.filter((c) => ownedCatalogIds.has(c.catalog_id)).length}/{scopedCatalog.length}
         </span>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setOwnedOnly((v) => !v)}
-        className={[
-          'self-start rounded-md border px-2.5 py-1 text-[10px]',
-          ownedOnly
-            ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
-            : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
-        ].join(' ')}
-      >
-        {ownedOnly ? 'Showing Owned' : 'Showing All'}
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOwnedOnly((v) => !v)}
+          className={[
+            'rounded-md border px-2.5 py-1 text-[10px]',
+            ownedOnly
+              ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
+              : 'border-slate-700 text-slate-400 hover:bg-slate-800/60',
+          ].join(' ')}
+        >
+          {ownedOnly ? 'Showing Owned' : 'Showing All'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainlineOnly((v) => !v)}
+          title={mainlineOnly ? 'Showing the 37 mainline RPGs only' : 'Showing mainline + spin-off series'}
+          className={[
+            'rounded-md border px-2.5 py-1 text-[10px]',
+            mainlineOnly
+              ? 'border-cyan-500/50 bg-cyan-500/20 text-cyan-300'
+              : 'border-amber-500/50 bg-amber-500/20 text-amber-300',
+          ].join(' ')}
+        >
+          {mainlineOnly ? 'Mainline Only' : 'Mainline + Spin-Offs'}
+        </button>
+
+        <select
+          value={consoleFilter}
+          onChange={(e) => setConsoleFilter(e.target.value)}
+          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] text-slate-300 outline-none focus:border-cyan-400"
+        >
+          <option value="all">All Consoles</option>
+          {availableConsoles.map((platform) => (
+            <option key={platform} value={platform}>
+              {platform}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className="grid flex-1 auto-rows-min grid-cols-4 gap-2 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-2">
-        {visibleCatalog.map((item) => (
-          <CatalogTile
-            key={item.catalog_id}
-            item={item}
-            owned={ownedCatalogIds.has(item.catalog_id)}
-            active={selectedId === item.catalog_id}
-            onSelect={() => {
-              setSelectedId(item.catalog_id);
-              setFormOpen(false);
-            }}
-          />
-        ))}
+        {displayList.map((entry) =>
+          entry.kind === 'family' ? (
+            <FamilyTile
+              key={entry.key}
+              label={entry.label}
+              count={entry.items.length}
+              ownedCount={entry.items.filter((i) => ownedCatalogIds.has(i.catalog_id)).length}
+              onExpand={() => toggleFamily(entry.key)}
+            />
+          ) : (
+            <div key={entry.item.catalog_id} className="relative">
+              {entry.item.franchise && (
+                <button
+                  type="button"
+                  onClick={() => toggleFamily(entry.item.franchise!)}
+                  title={`Collapse ${FRANCHISE_LABEL[entry.item.franchise] ?? entry.item.franchise} back into one tile`}
+                  className="absolute right-0.5 top-0.5 z-10 rounded bg-slate-950/70 px-1 text-[9px] text-violet-300 hover:text-violet-200"
+                >
+                  ↺
+                </button>
+              )}
+              <CatalogTile
+                item={entry.item}
+                owned={ownedCatalogIds.has(entry.item.catalog_id)}
+                active={selectedId === entry.item.catalog_id}
+                onSelect={() => {
+                  setSelectedId(entry.item.catalog_id);
+                  setFormOpen(false);
+                }}
+              />
+            </div>
+          ),
+        )}
       </div>
 
       {selectedItem && (

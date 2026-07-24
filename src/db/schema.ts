@@ -172,6 +172,19 @@ export interface CollectibleCatalogItem {
   platform: string;
   region: string;
   release_year: number;
+  /** True for the 37 core RPGs (Red through Violet); false for every spin-off. Shelf defaults to mainline-only. */
+  is_mainline: boolean;
+  /**
+   * Groups multi-entry spin-off series (Mystery Dungeon, Ranger, Stadium,
+   * Pokkén, ...) under one shared key so the Shelf can collapse them into a
+   * single family tile — the same slide-open/collapse mechanic the Pokédex
+   * grid uses for multi-form species — instead of flooding the grid with
+   * one tile per sub-title. Null for standalone spin-offs and all mainline
+   * titles (which are never grouped).
+   */
+  franchise: string | null;
+  /** True world-release chronological order across the whole catalog, 0 = earliest. Not the same sequence as release_year, which is display-only (NA year). */
+  release_order: number;
 }
 
 export interface CollectibleGrading {
