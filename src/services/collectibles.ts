@@ -9,94 +9,54 @@ import { recordSnapshot } from './versionHistory';
  * this seed for a live fetch is a one-file change since the rest of the
  * feature reads catalog_id/name/platform/region/release_year generically.
  *
- * Console games only — this is a physical/console collection tracker, so
- * mobile-only free-to-play titles (GO, Duel, Magikarp Jump, Masters EX,
- * Smile, Sleep) aren't seeded here; there's nothing to "collect" for a
- * title that's just always free on your phone. `release_year` is the NA
- * release year (display-only); `release_order` is the true worldwide
- * release sequence, since same-year titles and JP-first releases don't
- * sort correctly by year alone. `franchise` groups multi-entry spin-off
- * series so the Shelf can collapse them into one slide-open family tile.
+ * Mainline titles only, for now — spin-offs (Stadium, Mystery Dungeon,
+ * Ranger, ...) and mobile-only free-to-play titles are left out entirely
+ * rather than filtered, keeping the Shelf a single flat, evenly-spaced
+ * grid instead of the earlier franchise-grouping/slide-open UI. The
+ * `is_mainline`/`franchise`/`digital_only` fields stay on the schema in
+ * case spin-offs come back later, but every row here is `is_mainline: true`
+ * with no franchise. `release_year` is the NA release year (display-only);
+ * `release_order` is the true worldwide release sequence, since same-year
+ * titles and JP-first releases don't sort correctly by year alone.
  */
 const SEED_CATALOG: CollectibleCatalogItem[] = [
-  // Mainline RPGs
   { catalog_id: 'red', category: 'game', name: 'Red', platform: 'Game Boy', region: 'NA', release_year: 1998, is_mainline: true, franchise: null, release_order: 0, digital_only: false },
   { catalog_id: 'blue', category: 'game', name: 'Blue', platform: 'Game Boy', region: 'NA', release_year: 1998, is_mainline: true, franchise: null, release_order: 1, digital_only: false },
-  { catalog_id: 'yellow', category: 'game', name: 'Yellow', platform: 'Game Boy', region: 'NA', release_year: 1999, is_mainline: true, franchise: null, release_order: 3, digital_only: false },
-  { catalog_id: 'gold', category: 'game', name: 'Gold', platform: 'Game Boy Color', region: 'NA', release_year: 2000, is_mainline: true, franchise: null, release_order: 7, digital_only: false },
-  { catalog_id: 'silver', category: 'game', name: 'Silver', platform: 'Game Boy Color', region: 'NA', release_year: 2000, is_mainline: true, franchise: null, release_order: 8, digital_only: false },
-  { catalog_id: 'crystal', category: 'game', name: 'Crystal', platform: 'Game Boy Color', region: 'NA', release_year: 2001, is_mainline: true, franchise: null, release_order: 10, digital_only: false },
-  { catalog_id: 'ruby', category: 'game', name: 'Ruby', platform: 'Game Boy Advance', region: 'NA', release_year: 2003, is_mainline: true, franchise: null, release_order: 12, digital_only: false },
-  { catalog_id: 'sapphire', category: 'game', name: 'Sapphire', platform: 'Game Boy Advance', region: 'NA', release_year: 2003, is_mainline: true, franchise: null, release_order: 13, digital_only: false },
-  { catalog_id: 'firered', category: 'game', name: 'FireRed', platform: 'Game Boy Advance', region: 'NA', release_year: 2004, is_mainline: true, franchise: null, release_order: 16, digital_only: false },
-  { catalog_id: 'leafgreen', category: 'game', name: 'LeafGreen', platform: 'Game Boy Advance', region: 'NA', release_year: 2004, is_mainline: true, franchise: null, release_order: 17, digital_only: false },
-  { catalog_id: 'emerald', category: 'game', name: 'Emerald', platform: 'Game Boy Advance', region: 'NA', release_year: 2005, is_mainline: true, franchise: null, release_order: 19, digital_only: false },
-  { catalog_id: 'diamond', category: 'game', name: 'Diamond', platform: 'Nintendo DS', region: 'NA', release_year: 2007, is_mainline: true, franchise: null, release_order: 22, digital_only: false },
-  { catalog_id: 'pearl', category: 'game', name: 'Pearl', platform: 'Nintendo DS', region: 'NA', release_year: 2007, is_mainline: true, franchise: null, release_order: 23, digital_only: false },
-  { catalog_id: 'platinum', category: 'game', name: 'Platinum', platform: 'Nintendo DS', region: 'NA', release_year: 2009, is_mainline: true, franchise: null, release_order: 29, digital_only: false },
-  { catalog_id: 'heartgold', category: 'game', name: 'HeartGold', platform: 'Nintendo DS', region: 'NA', release_year: 2010, is_mainline: true, franchise: null, release_order: 34, digital_only: false },
-  { catalog_id: 'soulsilver', category: 'game', name: 'SoulSilver', platform: 'Nintendo DS', region: 'NA', release_year: 2010, is_mainline: true, franchise: null, release_order: 35, digital_only: false },
-  { catalog_id: 'black', category: 'game', name: 'Black', platform: 'Nintendo DS', region: 'NA', release_year: 2011, is_mainline: true, franchise: null, release_order: 37, digital_only: false },
-  { catalog_id: 'white', category: 'game', name: 'White', platform: 'Nintendo DS', region: 'NA', release_year: 2011, is_mainline: true, franchise: null, release_order: 38, digital_only: false },
-  { catalog_id: 'black2', category: 'game', name: 'Black 2', platform: 'Nintendo DS', region: 'NA', release_year: 2012, is_mainline: true, franchise: null, release_order: 40, digital_only: false },
-  { catalog_id: 'white2', category: 'game', name: 'White 2', platform: 'Nintendo DS', region: 'NA', release_year: 2012, is_mainline: true, franchise: null, release_order: 41, digital_only: false },
-  { catalog_id: 'x', category: 'game', name: 'X', platform: 'Nintendo 3DS', region: 'NA', release_year: 2013, is_mainline: true, franchise: null, release_order: 44, digital_only: false },
-  { catalog_id: 'y', category: 'game', name: 'Y', platform: 'Nintendo 3DS', region: 'NA', release_year: 2013, is_mainline: true, franchise: null, release_order: 45, digital_only: false },
-  { catalog_id: 'omegaruby', category: 'game', name: 'Omega Ruby', platform: 'Nintendo 3DS', region: 'NA', release_year: 2014, is_mainline: true, franchise: null, release_order: 47, digital_only: false },
-  { catalog_id: 'alphasapphire', category: 'game', name: 'Alpha Sapphire', platform: 'Nintendo 3DS', region: 'NA', release_year: 2014, is_mainline: true, franchise: null, release_order: 48, digital_only: false },
-  { catalog_id: 'sun', category: 'game', name: 'Sun', platform: 'Nintendo 3DS', region: 'NA', release_year: 2016, is_mainline: true, franchise: null, release_order: 53, digital_only: false },
-  { catalog_id: 'moon', category: 'game', name: 'Moon', platform: 'Nintendo 3DS', region: 'NA', release_year: 2016, is_mainline: true, franchise: null, release_order: 54, digital_only: false },
-  { catalog_id: 'ultrasun', category: 'game', name: 'Ultra Sun', platform: 'Nintendo 3DS', region: 'NA', release_year: 2017, is_mainline: true, franchise: null, release_order: 56, digital_only: false },
-  { catalog_id: 'ultramoon', category: 'game', name: 'Ultra Moon', platform: 'Nintendo 3DS', region: 'NA', release_year: 2017, is_mainline: true, franchise: null, release_order: 57, digital_only: false },
-  { catalog_id: 'letsgopikachu', category: 'game', name: "Let's Go, Pikachu!", platform: 'Nintendo Switch', region: 'NA', release_year: 2018, is_mainline: true, franchise: null, release_order: 60, digital_only: false },
-  { catalog_id: 'letsgoeevee', category: 'game', name: "Let's Go, Eevee!", platform: 'Nintendo Switch', region: 'NA', release_year: 2018, is_mainline: true, franchise: null, release_order: 61, digital_only: false },
-  { catalog_id: 'sword', category: 'game', name: 'Sword', platform: 'Nintendo Switch', region: 'NA', release_year: 2019, is_mainline: true, franchise: null, release_order: 63, digital_only: false },
-  { catalog_id: 'shield', category: 'game', name: 'Shield', platform: 'Nintendo Switch', region: 'NA', release_year: 2019, is_mainline: true, franchise: null, release_order: 64, digital_only: false },
-  { catalog_id: 'brilliantdiamond', category: 'game', name: 'Brilliant Diamond', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: true, franchise: null, release_order: 67, digital_only: false },
-  { catalog_id: 'shiningpearl', category: 'game', name: 'Shining Pearl', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: true, franchise: null, release_order: 68, digital_only: false },
-  { catalog_id: 'legendsarceus', category: 'game', name: 'Legends: Arceus', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 71, digital_only: false },
-  { catalog_id: 'scarlet', category: 'game', name: 'Scarlet', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 72, digital_only: false },
-  { catalog_id: 'violet', category: 'game', name: 'Violet', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 73, digital_only: false },
-
-  // Spin-offs, in true worldwide release order, interleaved with the mainline timeline above
-  { catalog_id: 'pinball', category: 'game', name: 'Pinball', platform: 'Game Boy Color', region: 'NA', release_year: 1999, is_mainline: false, franchise: 'pinball', release_order: 2, digital_only: false },
-  { catalog_id: 'tradingcardgame', category: 'game', name: 'Trading Card Game', platform: 'Game Boy Color', region: 'NA', release_year: 2000, is_mainline: false, franchise: null, release_order: 4, digital_only: false },
-  { catalog_id: 'stadium', category: 'game', name: 'Stadium', platform: 'Nintendo 64', region: 'NA', release_year: 2000, is_mainline: false, franchise: 'stadium', release_order: 5, digital_only: false },
-  { catalog_id: 'snap', category: 'game', name: 'Snap', platform: 'Nintendo 64', region: 'NA', release_year: 1999, is_mainline: false, franchise: 'snap', release_order: 6, digital_only: false },
-  { catalog_id: 'stadium2', category: 'game', name: 'Stadium 2', platform: 'Nintendo 64', region: 'NA', release_year: 2001, is_mainline: false, franchise: 'stadium', release_order: 9, digital_only: false },
-  { catalog_id: 'puzzleleague', category: 'game', name: 'Puzzle League', platform: 'Nintendo 64', region: 'NA', release_year: 2000, is_mainline: false, franchise: null, release_order: 11, digital_only: false },
-  { catalog_id: 'pinballrs', category: 'game', name: 'Pinball: Ruby & Sapphire', platform: 'Game Boy Advance', region: 'NA', release_year: 2003, is_mainline: false, franchise: 'pinball', release_order: 14, digital_only: false },
-  { catalog_id: 'colosseum', category: 'game', name: 'Colosseum', platform: 'GameCube', region: 'NA', release_year: 2004, is_mainline: false, franchise: 'colosseum', release_order: 15, digital_only: false },
-  { catalog_id: 'channel', category: 'game', name: 'Channel', platform: 'GameCube', region: 'NA', release_year: 2003, is_mainline: false, franchise: null, release_order: 18, digital_only: false },
-  { catalog_id: 'xd', category: 'game', name: 'XD: Gale of Darkness', platform: 'GameCube', region: 'NA', release_year: 2005, is_mainline: false, franchise: 'colosseum', release_order: 20, digital_only: false },
-  { catalog_id: 'dash', category: 'game', name: 'Dash', platform: 'Nintendo DS', region: 'NA', release_year: 2005, is_mainline: false, franchise: null, release_order: 21, digital_only: false },
-  { catalog_id: 'trozei', category: 'game', name: 'Trozei!', platform: 'Nintendo DS', region: 'NA', release_year: 2006, is_mainline: false, franchise: 'trozei', release_order: 24, digital_only: false },
-  { catalog_id: 'mdrescueteam', category: 'game', name: 'Mystery Dungeon: Red/Blue Rescue Team', platform: 'Nintendo DS', region: 'NA', release_year: 2006, is_mainline: false, franchise: 'mystery-dungeon', release_order: 25, digital_only: false },
-  { catalog_id: 'ranger', category: 'game', name: 'Ranger', platform: 'Nintendo DS', region: 'NA', release_year: 2006, is_mainline: false, franchise: 'ranger', release_order: 26, digital_only: false },
-  { catalog_id: 'battlerevolution', category: 'game', name: 'Battle Revolution', platform: 'Wii', region: 'NA', release_year: 2007, is_mainline: false, franchise: null, release_order: 27, digital_only: false },
-  { catalog_id: 'mdexplorers', category: 'game', name: 'Mystery Dungeon: Explorers of Time/Darkness', platform: 'Nintendo DS', region: 'NA', release_year: 2008, is_mainline: false, franchise: 'mystery-dungeon', release_order: 28, digital_only: false },
-  { catalog_id: 'rangershadows', category: 'game', name: 'Ranger: Shadows of Almia', platform: 'Nintendo DS', region: 'NA', release_year: 2008, is_mainline: false, franchise: 'ranger', release_order: 30, digital_only: false },
-  { catalog_id: 'conquest', category: 'game', name: 'Conquest', platform: 'Nintendo DS', region: 'NA', release_year: 2012, is_mainline: false, franchise: null, release_order: 31, digital_only: false },
-  { catalog_id: 'mdsky', category: 'game', name: 'Mystery Dungeon: Explorers of Sky', platform: 'Nintendo DS', region: 'NA', release_year: 2009, is_mainline: false, franchise: 'mystery-dungeon', release_order: 32, digital_only: false },
-  { catalog_id: 'pokepark', category: 'game', name: "PokéPark Wii: Pikachu's Adventure", platform: 'Wii', region: 'NA', release_year: 2009, is_mainline: false, franchise: 'pokepark', release_order: 33, digital_only: false },
-  { catalog_id: 'rangerguardian', category: 'game', name: 'Ranger: Guardian Signs', platform: 'Nintendo DS', region: 'NA', release_year: 2010, is_mainline: false, franchise: 'ranger', release_order: 36, digital_only: false },
-  { catalog_id: 'pokepark2', category: 'game', name: 'PokéPark 2: Wonders Beyond', platform: 'Wii', region: 'NA', release_year: 2011, is_mainline: false, franchise: 'pokepark', release_order: 39, digital_only: false },
-  { catalog_id: 'rumbleblast', category: 'game', name: 'Rumble Blast', platform: 'Nintendo 3DS', region: 'NA', release_year: 2011, is_mainline: false, franchise: 'rumble', release_order: 42, digital_only: false },
-  { catalog_id: 'mdgates', category: 'game', name: 'Mystery Dungeon: Gates to Infinity', platform: 'Nintendo 3DS', region: 'NA', release_year: 2013, is_mainline: false, franchise: 'mystery-dungeon', release_order: 43, digital_only: false },
-  { catalog_id: 'battletrozei', category: 'game', name: 'Battle Trozei', platform: 'Nintendo 3DS', region: 'NA', release_year: 2014, is_mainline: false, franchise: 'trozei', release_order: 46, digital_only: true },
-  { catalog_id: 'shuffle', category: 'game', name: 'Shuffle', platform: 'Nintendo 3DS', region: 'NA', release_year: 2015, is_mainline: false, franchise: null, release_order: 49, digital_only: true },
-  { catalog_id: 'picross', category: 'game', name: 'Picross', platform: 'Nintendo 3DS', region: 'NA', release_year: 2015, is_mainline: false, franchise: null, release_order: 50, digital_only: true },
-  { catalog_id: 'rumbleworld', category: 'game', name: 'Rumble World', platform: 'Nintendo 3DS', region: 'NA', release_year: 2015, is_mainline: false, franchise: 'rumble', release_order: 51, digital_only: true },
-  { catalog_id: 'pokkentournament', category: 'game', name: 'Pokkén Tournament', platform: 'Wii U', region: 'NA', release_year: 2016, is_mainline: false, franchise: 'pokken', release_order: 52, digital_only: false },
-  { catalog_id: 'artacademy', category: 'game', name: 'Art Academy: Pokémon', platform: 'Nintendo 3DS', region: 'NA', release_year: 2016, is_mainline: false, franchise: null, release_order: 55, digital_only: false },
-  { catalog_id: 'pokkentournamentdx', category: 'game', name: 'Pokkén Tournament DX', platform: 'Nintendo Switch', region: 'NA', release_year: 2017, is_mainline: false, franchise: 'pokken', release_order: 58, digital_only: false },
-  { catalog_id: 'detectivepikachu', category: 'game', name: 'Detective Pikachu', platform: 'Nintendo 3DS', region: 'NA', release_year: 2018, is_mainline: false, franchise: 'detective-pikachu', release_order: 59, digital_only: false },
-  { catalog_id: 'questmobile', category: 'game', name: 'Quest', platform: 'Nintendo Switch', region: 'NA', release_year: 2018, is_mainline: false, franchise: null, release_order: 62, digital_only: true },
-  { catalog_id: 'cafemix', category: 'game', name: 'Café Mix', platform: 'Nintendo Switch', region: 'NA', release_year: 2020, is_mainline: false, franchise: null, release_order: 65, digital_only: true },
-  { catalog_id: 'mdrescueteamdx', category: 'game', name: 'Mystery Dungeon: Rescue Team DX', platform: 'Nintendo Switch', region: 'NA', release_year: 2020, is_mainline: false, franchise: 'mystery-dungeon', release_order: 66, digital_only: false },
-  { catalog_id: 'snapswitch', category: 'game', name: 'New Pokémon Snap', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: false, franchise: 'snap', release_order: 69, digital_only: false },
-  { catalog_id: 'unite', category: 'game', name: 'Unite', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: false, franchise: null, release_order: 70, digital_only: true },
-  { catalog_id: 'detectivepikachureturns', category: 'game', name: 'Detective Pikachu Returns', platform: 'Nintendo Switch', region: 'NA', release_year: 2023, is_mainline: false, franchise: 'detective-pikachu', release_order: 74, digital_only: false },
+  { catalog_id: 'yellow', category: 'game', name: 'Yellow', platform: 'Game Boy', region: 'NA', release_year: 1999, is_mainline: true, franchise: null, release_order: 2, digital_only: false },
+  { catalog_id: 'gold', category: 'game', name: 'Gold', platform: 'Game Boy Color', region: 'NA', release_year: 2000, is_mainline: true, franchise: null, release_order: 3, digital_only: false },
+  { catalog_id: 'silver', category: 'game', name: 'Silver', platform: 'Game Boy Color', region: 'NA', release_year: 2000, is_mainline: true, franchise: null, release_order: 4, digital_only: false },
+  { catalog_id: 'crystal', category: 'game', name: 'Crystal', platform: 'Game Boy Color', region: 'NA', release_year: 2001, is_mainline: true, franchise: null, release_order: 5, digital_only: false },
+  { catalog_id: 'ruby', category: 'game', name: 'Ruby', platform: 'Game Boy Advance', region: 'NA', release_year: 2003, is_mainline: true, franchise: null, release_order: 6, digital_only: false },
+  { catalog_id: 'sapphire', category: 'game', name: 'Sapphire', platform: 'Game Boy Advance', region: 'NA', release_year: 2003, is_mainline: true, franchise: null, release_order: 7, digital_only: false },
+  { catalog_id: 'firered', category: 'game', name: 'FireRed', platform: 'Game Boy Advance', region: 'NA', release_year: 2004, is_mainline: true, franchise: null, release_order: 8, digital_only: false },
+  { catalog_id: 'leafgreen', category: 'game', name: 'LeafGreen', platform: 'Game Boy Advance', region: 'NA', release_year: 2004, is_mainline: true, franchise: null, release_order: 9, digital_only: false },
+  { catalog_id: 'emerald', category: 'game', name: 'Emerald', platform: 'Game Boy Advance', region: 'NA', release_year: 2005, is_mainline: true, franchise: null, release_order: 10, digital_only: false },
+  { catalog_id: 'diamond', category: 'game', name: 'Diamond', platform: 'Nintendo DS', region: 'NA', release_year: 2007, is_mainline: true, franchise: null, release_order: 11, digital_only: false },
+  { catalog_id: 'pearl', category: 'game', name: 'Pearl', platform: 'Nintendo DS', region: 'NA', release_year: 2007, is_mainline: true, franchise: null, release_order: 12, digital_only: false },
+  { catalog_id: 'platinum', category: 'game', name: 'Platinum', platform: 'Nintendo DS', region: 'NA', release_year: 2009, is_mainline: true, franchise: null, release_order: 13, digital_only: false },
+  { catalog_id: 'heartgold', category: 'game', name: 'HeartGold', platform: 'Nintendo DS', region: 'NA', release_year: 2010, is_mainline: true, franchise: null, release_order: 14, digital_only: false },
+  { catalog_id: 'soulsilver', category: 'game', name: 'SoulSilver', platform: 'Nintendo DS', region: 'NA', release_year: 2010, is_mainline: true, franchise: null, release_order: 15, digital_only: false },
+  { catalog_id: 'black', category: 'game', name: 'Black', platform: 'Nintendo DS', region: 'NA', release_year: 2011, is_mainline: true, franchise: null, release_order: 16, digital_only: false },
+  { catalog_id: 'white', category: 'game', name: 'White', platform: 'Nintendo DS', region: 'NA', release_year: 2011, is_mainline: true, franchise: null, release_order: 17, digital_only: false },
+  { catalog_id: 'black2', category: 'game', name: 'Black 2', platform: 'Nintendo DS', region: 'NA', release_year: 2012, is_mainline: true, franchise: null, release_order: 18, digital_only: false },
+  { catalog_id: 'white2', category: 'game', name: 'White 2', platform: 'Nintendo DS', region: 'NA', release_year: 2012, is_mainline: true, franchise: null, release_order: 19, digital_only: false },
+  { catalog_id: 'x', category: 'game', name: 'X', platform: 'Nintendo 3DS', region: 'NA', release_year: 2013, is_mainline: true, franchise: null, release_order: 20, digital_only: false },
+  { catalog_id: 'y', category: 'game', name: 'Y', platform: 'Nintendo 3DS', region: 'NA', release_year: 2013, is_mainline: true, franchise: null, release_order: 21, digital_only: false },
+  { catalog_id: 'omegaruby', category: 'game', name: 'Omega Ruby', platform: 'Nintendo 3DS', region: 'NA', release_year: 2014, is_mainline: true, franchise: null, release_order: 22, digital_only: false },
+  { catalog_id: 'alphasapphire', category: 'game', name: 'Alpha Sapphire', platform: 'Nintendo 3DS', region: 'NA', release_year: 2014, is_mainline: true, franchise: null, release_order: 23, digital_only: false },
+  { catalog_id: 'sun', category: 'game', name: 'Sun', platform: 'Nintendo 3DS', region: 'NA', release_year: 2016, is_mainline: true, franchise: null, release_order: 24, digital_only: false },
+  { catalog_id: 'moon', category: 'game', name: 'Moon', platform: 'Nintendo 3DS', region: 'NA', release_year: 2016, is_mainline: true, franchise: null, release_order: 25, digital_only: false },
+  { catalog_id: 'ultrasun', category: 'game', name: 'Ultra Sun', platform: 'Nintendo 3DS', region: 'NA', release_year: 2017, is_mainline: true, franchise: null, release_order: 26, digital_only: false },
+  { catalog_id: 'ultramoon', category: 'game', name: 'Ultra Moon', platform: 'Nintendo 3DS', region: 'NA', release_year: 2017, is_mainline: true, franchise: null, release_order: 27, digital_only: false },
+  { catalog_id: 'letsgopikachu', category: 'game', name: "Let's Go, Pikachu!", platform: 'Nintendo Switch', region: 'NA', release_year: 2018, is_mainline: true, franchise: null, release_order: 28, digital_only: false },
+  { catalog_id: 'letsgoeevee', category: 'game', name: "Let's Go, Eevee!", platform: 'Nintendo Switch', region: 'NA', release_year: 2018, is_mainline: true, franchise: null, release_order: 29, digital_only: false },
+  { catalog_id: 'sword', category: 'game', name: 'Sword', platform: 'Nintendo Switch', region: 'NA', release_year: 2019, is_mainline: true, franchise: null, release_order: 30, digital_only: false },
+  { catalog_id: 'shield', category: 'game', name: 'Shield', platform: 'Nintendo Switch', region: 'NA', release_year: 2019, is_mainline: true, franchise: null, release_order: 31, digital_only: false },
+  { catalog_id: 'brilliantdiamond', category: 'game', name: 'Brilliant Diamond', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: true, franchise: null, release_order: 32, digital_only: false },
+  { catalog_id: 'shiningpearl', category: 'game', name: 'Shining Pearl', platform: 'Nintendo Switch', region: 'NA', release_year: 2021, is_mainline: true, franchise: null, release_order: 33, digital_only: false },
+  { catalog_id: 'legendsarceus', category: 'game', name: 'Legends: Arceus', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 34, digital_only: false },
+  { catalog_id: 'scarlet', category: 'game', name: 'Scarlet', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 35, digital_only: false },
+  { catalog_id: 'violet', category: 'game', name: 'Violet', platform: 'Nintendo Switch', region: 'NA', release_year: 2022, is_mainline: true, franchise: null, release_order: 36, digital_only: false },
 ];
 
 export async function ensureSeedCatalog(): Promise<void> {

@@ -221,18 +221,28 @@ interface RawPokedexResponse {
  * A game title's real regional Pokédex — only the species obtainable in
  * that title, in that title's own numbering (PRD 6.8). Some titles split
  * across multiple PokeAPI pokedex resources (e.g. Kalos: central/coastal/
- * mountain); `slugs` are concatenated in order with numbering continuing
- * across them, matching how those games present a single unified dex.
+ * mountain; Sword/Shield: galar/isle-of-armor/crown-tundra; Scarlet/Violet:
+ * paldea/kitakami/blueberry); `slugs` are concatenated in order with
+ * numbering continuing across them, matching how those games present a
+ * single unified dex. Titles whose sub-dexes are geographic areas rather
+ * than truly disjoint dexes re-list species that already appear in an
+ * earlier area (confirmed against the real PokeAPI data: Galar + Isle of
+ * Armor + Crown Tundra alone has 237 such repeats, Paldea + Kitakami +
+ * Blueberry has 179) — dedupe by species id, keeping only its first
+ * (lowest/earliest) appearance, or the dex shows the same species twice.
  */
 export async function getRegionalDex(slugs: string[] | undefined): Promise<RegionalDexEntry[]> {
   if (!slugs || slugs.length === 0) return [];
   const dexes = await Promise.all(slugs.map((slug) => cachedFetch<RawPokedexResponse>(`${BASE}/pokedex/${slug}`)));
   const entries: RegionalDexEntry[] = [];
+  const seenIds = new Set<number>();
   let offset = 0;
   for (const dex of dexes) {
     const sorted = [...dex.pokemon_entries].sort((a, b) => a.entry_number - b.entry_number);
     for (const entry of sorted) {
       const id = Number(entry.pokemon_species.url.replace(/\/$/, '').split('/').pop());
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
       entries.push({ name: entry.pokemon_species.name, pokemonId: id, regionalNumber: offset + entry.entry_number });
     }
     offset += sorted.length;

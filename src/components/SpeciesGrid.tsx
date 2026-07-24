@@ -1419,25 +1419,27 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                 >
                   + Add another duplicate
                 </button>
-                <ul className="flex flex-wrap gap-1.5">
+                <ul className="grid grid-cols-4 gap-2">
                   {expandedSpecies.map((e) => (
                     <li key={e.uuid} className="relative">
                       <button
                         type="button"
                         onClick={() => setSelectedUuid(e.uuid)}
-                        className="flex flex-col items-center rounded border border-slate-700 bg-slate-900/50 p-1 hover:border-slate-500"
+                        className="flex w-full flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/50 p-2 hover:border-slate-500"
                       >
-                        <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-10 w-10" style={{ imageRendering: 'pixelated' }} />
-                        <span className="text-[8px] text-slate-400">
-                          {e.nickname ?? `Lv.${e.level}`} {e.shiny && <span className="text-amber-300">★</span>}
-                          {e.is_sandbox_anomalous && <span className="text-red-400"> ⚠</span>}
+                        <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-16 w-16" style={{ imageRendering: 'pixelated' }} />
+                        <span className="text-[9px] leading-tight text-slate-300">{e.nickname ?? `Lv.${e.level}`}</span>
+                        <span className="text-[9px] text-slate-500">
+                          {e.shiny && <span className="text-amber-300">★ </span>}
+                          {e.is_sandbox_anomalous && <span className="text-red-400">⚠</span>}
+                          {!e.shiny && !e.is_sandbox_anomalous && `Lv.${e.level}`}
                         </span>
                       </button>
                       <button
                         type="button"
                         onClick={() => handleRemoveDrawerSpecimen(e)}
                         title="Remove this one"
-                        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border border-red-700/60 bg-slate-950 text-[9px] text-red-300 hover:bg-red-900/60"
+                        className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-red-700/60 bg-slate-950 text-[10px] text-red-300 hover:bg-red-900/60"
                       >
                         ×
                       </button>
