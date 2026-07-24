@@ -44,9 +44,13 @@ const SEED_TITLES: GameTitle[] = [
   // Gen 3
   { game_title_id: 'ruby', name: 'Ruby', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 7 },
   { game_title_id: 'sapphire', name: 'Sapphire', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 8 },
-  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 9 },
-  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 10 },
-  { game_title_id: 'leafgreen', name: 'LeafGreen', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 11 },
+  // FireRed/LeafGreen (Jan 2004 Japan, Sept 2004 US) released before
+  // Emerald (Sept 2004 Japan, May 2005 US) under either region's dating —
+  // grouping this whole array by generation almost got it right except
+  // for this one pair, which real-world release order doesn't follow.
+  { game_title_id: 'firered', name: 'FireRed', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 9 },
+  { game_title_id: 'leafgreen', name: 'LeafGreen', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['kanto'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 10 },
+  { game_title_id: 'emerald', name: 'Emerald', generation: 3, box_count: 14, boxes_slots: 30, box_width: 6, pokedex_slugs: ['hoenn'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 11 },
 
   // Gen 4
   { game_title_id: 'diamond', name: 'Diamond', generation: 4, box_count: 18, boxes_slots: 30, box_width: 6, pokedex_slugs: ['original-sinnoh'], allows_pokemon_go: false, has_expanded_national_dex: true, release_order: 12 },
