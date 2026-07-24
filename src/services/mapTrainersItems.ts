@@ -328,3 +328,33 @@ export async function getLocationTrainersAndItems(
   }
   return { trainers: [], items: [], note: null };
 }
+
+/**
+ * Trainer/item data for many locations at once, concurrency-capped like
+ * getSpeciesFormDataBulk — used to answer "which of these ~50 map tiles
+ * has an item?" without firing 50 simultaneous requests at GitHub's raw
+ * content API. Each individual location's fetches are already cached
+ * (cachedFetchText/cachedFetch), so this cost is paid once per location
+ * per game, ever.
+ */
+export async function getBulkLocationItems(
+  gameTitleId: string,
+  locationNames: string[],
+): Promise<Map<string, LiveLocationBattleData>> {
+  const unique = [...new Set(locationNames)];
+  const map = new Map<string, LiveLocationBattleData>();
+  let index = 0;
+  async function worker() {
+    while (index < unique.length) {
+      const i = index++;
+      const name = unique[i];
+      try {
+        map.set(name, await getLocationTrainersAndItems(gameTitleId, name));
+      } catch {
+        map.set(name, { trainers: [], items: [], note: null });
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(6, unique.length) }, worker));
+  return map;
+}

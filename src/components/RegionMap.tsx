@@ -1,65 +1,86 @@
 import { type RegionNode, type RegionNodeKind } from '../services/regionLayouts';
 
-const TILE_PX = 34;
+const TILE_PX = 44;
 
-/** Original per-terrain tile art (all inline SVG shapes drawn by this app, not sourced from any game asset). */
-const TILE_FILL: Record<RegionNodeKind, string> = {
-  town: '#78716c',
-  route: '#3f6212',
-  cave: '#57534e',
-  forest: '#14532d',
-  water: '#1d4ed8',
-  landmark: '#7c2d92',
+/** Original per-terrain tile palettes (all inline SVG shapes drawn by this app, not sourced from any game asset) — a cooler, higher-contrast palette than the first pass, aiming for a chunkier handheld-console mood. */
+const TILE_PALETTE: Record<RegionNodeKind, { base: string; edge: string; accent: string }> = {
+  town: { base: '#8a7f74', edge: '#5c5349', accent: '#e2e8f0' },
+  route: { base: '#3f7d20', edge: '#2c5915', accent: '#a3e635' },
+  cave: { base: '#4b4945', edge: '#302e2b', accent: '#a8a29e' },
+  forest: { base: '#1d5c33', edge: '#123d21', accent: '#4ade80' },
+  water: { base: '#1e5fae', edge: '#123e73', accent: '#93c5fd' },
+  landmark: { base: '#6d2f8f', edge: '#481f60', accent: '#e9d5ff' },
 };
 
-function TileArt({ kind, caught, active }: { kind: RegionNodeKind; caught: boolean; active: boolean }) {
-  const base = TILE_FILL[kind];
+function TileArt({ kind, caught, active, hasItem }: { kind: RegionNodeKind; caught: boolean; active: boolean; hasItem: boolean }) {
+  const p = TILE_PALETTE[kind];
   return (
-    <svg width={TILE_PX} height={TILE_PX} viewBox="0 0 34 34" className="pointer-events-none">
-      <rect x={1} y={1} width={32} height={32} rx={4} fill={base} stroke={active ? '#22d3ee' : '#0b0c10'} strokeWidth={active ? 2.5 : 1.5} />
+    <svg width={TILE_PX} height={TILE_PX} viewBox="0 0 44 44" className="pointer-events-none">
+      {/* Base tile with a two-tone bevel for a chunkier, more "console tile" feel. */}
+      <rect x={1} y={1} width={42} height={42} rx={5} fill={p.edge} />
+      <rect x={2} y={2} width={40} height={37} rx={4} fill={p.base} />
+      <rect x={2} y={2} width={40} height={12} rx={4} fill="#ffffff" opacity={0.08} />
+
       {kind === 'route' && (
         <>
-          <circle cx={9} cy={10} r={1.6} fill="#84cc16" />
-          <circle cx={21} cy={9} r={1.6} fill="#84cc16" />
-          <circle cx={15} cy={17} r={1.6} fill="#84cc16" />
-          <circle cx={25} cy={22} r={1.6} fill="#84cc16" />
-          <circle cx={8} cy={24} r={1.6} fill="#84cc16" />
+          <circle cx={11} cy={12} r={2} fill={p.accent} />
+          <circle cx={27} cy={10} r={2} fill={p.accent} />
+          <circle cx={19} cy={21} r={2} fill={p.accent} />
+          <circle cx={33} cy={27} r={2} fill={p.accent} />
+          <circle cx={9} cy={30} r={2} fill={p.accent} />
+          <circle cx={24} cy={33} r={2} fill={p.accent} />
         </>
       )}
       {kind === 'forest' && (
         <>
-          <polygon points="10,8 14,17 6,17" fill="#166534" />
-          <polygon points="22,6 26,15 18,15" fill="#166534" />
-          <polygon points="16,16 20,25 12,25" fill="#166534" />
+          <polygon points="12,9 17,21 7,21" fill={p.accent} />
+          <polygon points="28,7 33,19 23,19" fill={p.accent} />
+          <polygon points="20,20 25,32 15,32" fill={p.accent} />
+          <rect x={11} y={21} width={2} height={4} fill="#5c4326" />
+          <rect x={27} y={19} width={2} height={4} fill="#5c4326" />
         </>
       )}
       {kind === 'water' && (
         <>
-          <path d="M4 12 q3 -3 6 0 t6 0 t6 0 t6 0" stroke="#7dd3fc" strokeWidth={1.6} fill="none" />
-          <path d="M4 20 q3 -3 6 0 t6 0 t6 0 t6 0" stroke="#7dd3fc" strokeWidth={1.6} fill="none" />
+          <path d="M5 15 q4 -4 8 0 t8 0 t8 0 t8 0" stroke={p.accent} strokeWidth={2} fill="none" />
+          <path d="M5 24 q4 -4 8 0 t8 0 t8 0 t8 0" stroke={p.accent} strokeWidth={2} fill="none" />
+          <path d="M5 33 q4 -4 8 0 t8 0 t8 0 t8 0" stroke={p.accent} strokeWidth={1.6} fill="none" opacity={0.6} />
         </>
       )}
       {kind === 'cave' && (
         <>
-          <polygon points="6,26 10,12 15,20 19,9 24,18 28,26" fill="#292524" />
+          <polygon points="7,34 12,15 18,26 24,11 31,23 37,34" fill={p.edge} />
+          <polygon points="7,34 12,15 18,26 24,11 31,23 37,34" fill="none" stroke={p.accent} strokeWidth={0.6} opacity={0.5} />
         </>
       )}
       {kind === 'town' && (
         <>
-          <rect x={9} y={16} width={16} height={11} fill="#a8a29e" />
-          <polygon points="7,16 17,7 27,16" fill="#dc2626" />
+          <rect x={11} y={20} width={22} height={15} fill={p.accent} />
+          <rect x={11} y={20} width={22} height={15} fill="#000" opacity={0.08} />
+          <polygon points="9,20 22,9 35,20" fill="#c23a3a" />
+          <rect x={20} y={26} width={5} height={9} fill={p.edge} />
         </>
       )}
       {kind === 'landmark' && (
         <>
-          <polygon points="17,6 24,15 20,15 20,28 14,28 14,15 10,15" fill="#e9d5ff" />
+          <polygon points="22,7 30,20 25,20 25,35 19,35 19,20 14,20" fill={p.accent} />
+          <circle cx={22} cy={12} r={2.4} fill="#fde68a" />
+        </>
+      )}
+
+      <rect x={1} y={1} width={42} height={42} rx={5} fill="none" stroke={active ? '#22d3ee' : '#0b0c10'} strokeWidth={active ? 3 : 1.5} />
+
+      {hasItem && (
+        <>
+          <rect x={2} y={31} width={11} height={10} rx={2} fill="#0b0c10" stroke="#fbbf24" strokeWidth={1.2} />
+          <rect x={5} y={33} width={5} height={2} fill="#fbbf24" />
         </>
       )}
       {caught && (
-        <circle cx={27} cy={7} r={5} fill="#0b0c10" stroke="#34d399" strokeWidth={1.5} />
-      )}
-      {caught && (
-        <path d="M24.5 7 l1.6 1.8 l3.2 -3.6" stroke="#34d399" strokeWidth={1.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <>
+          <circle cx={36} cy={9} r={6.5} fill="#0b0c10" stroke="#34d399" strokeWidth={1.5} />
+          <path d="M32.5 9 l2.2 2.4 l4.3 -4.8" stroke="#34d399" strokeWidth={1.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </>
       )}
     </svg>
   );
@@ -78,16 +99,19 @@ export function RegionMap({
   nodes,
   selected,
   caughtLocations,
+  itemLocations,
   onSelect,
 }: {
   nodes: RegionNode[];
   selected: string | null;
   /** Location names with at least one already-caught species, for the small checkmark badge. */
   caughtLocations: Set<string>;
+  /** Location names with at least one real recorded item (only populated when the Items layer is on and data's back), for the small bag badge. */
+  itemLocations: Set<string>;
   onSelect: (locationName: string) => void;
 }) {
-  const cellW = TILE_PX + 14;
-  const cellH = TILE_PX + 14;
+  const cellW = TILE_PX + 18;
+  const cellH = TILE_PX + 18;
   const pad = TILE_PX;
   const maxCol = Math.max(...nodes.map((n) => n.col));
   const maxRow = Math.max(...nodes.map((n) => n.row));
@@ -113,7 +137,7 @@ export function RegionMap({
   }
 
   return (
-    <div className="overflow-auto rounded-lg border border-slate-700 bg-slate-950/60 p-2">
+    <div className="h-full overflow-auto rounded-lg border border-slate-700 bg-slate-950/70 p-2">
       <svg width={width} height={height} className="block">
         {edges.map(({ from, to }, i) => {
           const [x1, y1] = xy(from);
@@ -125,8 +149,8 @@ export function RegionMap({
               y1={y1 + TILE_PX / 2}
               x2={x2 + TILE_PX / 2}
               y2={y2 + TILE_PX / 2}
-              stroke="#3f3f46"
-              strokeWidth={4}
+              stroke="#44403c"
+              strokeWidth={6}
               strokeLinecap="round"
             />
           );
@@ -134,15 +158,21 @@ export function RegionMap({
         {nodes.map((n) => {
           const [x, y] = xy(n);
           return (
-            <foreignObject key={n.locationName} x={x} y={y} width={TILE_PX} height={TILE_PX}>
+            <foreignObject key={n.locationName} x={x} y={y} width={TILE_PX} height={TILE_PX + 12}>
               <button
                 type="button"
                 title={n.label}
                 onClick={() => onSelect(n.locationName)}
-                className="block cursor-pointer"
-                style={{ width: TILE_PX, height: TILE_PX }}
+                className="flex flex-col items-center gap-0.5 cursor-pointer"
+                style={{ width: TILE_PX }}
               >
-                <TileArt kind={n.kind} caught={caughtLocations.has(n.locationName)} active={selected === n.locationName} />
+                <TileArt
+                  kind={n.kind}
+                  caught={caughtLocations.has(n.locationName)}
+                  active={selected === n.locationName}
+                  hasItem={itemLocations.has(n.locationName)}
+                />
+                <span className="w-full truncate text-center text-[7px] leading-none text-slate-400">{n.label}</span>
               </button>
             </foreignObject>
           );
