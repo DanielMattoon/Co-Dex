@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Generations, toID } from '@smogon/calc';
 import { getEvolutionChain, getLevelUpMoves, type EvolutionChainData, type LevelUpMove } from '../services/pokeapi';
+import { getGeneration } from '../services/boxes';
+import { getSpeciesIdIndex, lookupSpeciesId } from '../services/speciesIndex';
 import { StatBar } from './StatBar';
 
 const GEN = Generations.get(9);
@@ -29,9 +31,10 @@ function externalLinks(species: string) {
  * breeding lock/etc.) lives here; that's InfoPanel's job for owned
  * specimens.
  */
-export function SpeciesReference({ species }: { species: string }) {
+export function SpeciesReference({ species, generationCap }: { species: string; generationCap?: number }) {
   const [evolution, setEvolution] = useState<EvolutionChainData | null>(null);
   const [levelUpMoves, setLevelUpMoves] = useState<LevelUpMove[] | null>(null);
+  const [speciesIdIndex, setSpeciesIdIndex] = useState<Map<string, number>>(new Map());
 
   useEffect(() => {
     setEvolution(null);
@@ -40,9 +43,26 @@ export function SpeciesReference({ species }: { species: string }) {
     getLevelUpMoves(species).then(setLevelUpMoves).catch(() => setLevelUpMoves([]));
   }, [species]);
 
+  useEffect(() => {
+    getSpeciesIdIndex().then(setSpeciesIdIndex);
+  }, []);
+
   const smogonSpecies = GEN.species.get(toID(species));
   const baseStats = smogonSpecies?.baseStats;
   const links = externalLinks(species);
+
+  // A species' evolution FAMILY (PokeAPI) isn't the same as what's
+  // reachable in a specific game's generation — Stantler's chain includes
+  // Wyrdeer, which only exists from Legends: Arceus onward, so a Gold-era
+  // reference shouldn't list it. Same gating as InfoPanel's reservation
+  // picker, applied here to the flat reference chain.
+  const cap = generationCap ?? Infinity;
+  const evolutionSpeciesInGame = evolution
+    ? evolution.species.filter((s) => {
+        const id = lookupSpeciesId(speciesIdIndex, s);
+        return id === undefined || getGeneration(id) <= cap;
+      })
+    : [];
 
   return (
     <div className="text-xs">
@@ -58,9 +78,15 @@ export function SpeciesReference({ species }: { species: string }) {
         <p className="mb-1 text-slate-500">Evolution</p>
         {evolution === null && <p className="text-slate-600">Loading…</p>}
         {evolution && evolution.species.length <= 1 && <p className="text-slate-600">Doesn't evolve.</p>}
-        {evolution && evolution.species.length > 1 && (
+        {evolution && evolution.species.length > 1 && evolutionSpeciesInGame.length <= 1 && (
+          <p className="text-slate-600">No evolutions available yet in this game's generation.</p>
+        )}
+        {evolution && evolutionSpeciesInGame.length > 1 && (
           <p className="text-slate-300">
-            {evolution.species.join(' → ')}
+            {evolutionSpeciesInGame.join(' → ')}
+            {evolutionSpeciesInGame.length < evolution.species.length && (
+              <span className="text-slate-600"> (later stages hidden — not in this game's generation)</span>
+            )}
           </p>
         )}
       </div>

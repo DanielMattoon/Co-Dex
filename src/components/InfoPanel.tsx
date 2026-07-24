@@ -16,6 +16,8 @@ import { markFainted } from '../services/nuzlocke';
 import { recordSnapshot } from '../services/versionHistory';
 import { checkTransferLegality, executeTransfer, type LegalityCheck } from '../services/transfer';
 import { listKnownRoutes } from '../services/mapData';
+import { getGeneration } from '../services/boxes';
+import { getSpeciesIdIndex, lookupSpeciesId } from '../services/speciesIndex';
 import { StatBar } from './StatBar';
 import { SpeciesPicker } from './SpeciesPicker';
 
@@ -60,12 +62,14 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
   const knownRoutes = listKnownRoutes();
   const [itemNames, setItemNames] = useState<string[]>([]);
   const [itemGenerationByName, setItemGenerationByName] = useState<Map<string, number>>(new Map());
+  const [speciesIdIndex, setSpeciesIdIndex] = useState<Map<string, number>>(new Map());
 
   const gameInstance = useLiveQuery(() => db.game_instances.get(entry.current_game_instance_id), [entry.current_game_instance_id]);
   const entryGameTitle = useLiveQuery(() => (gameInstance ? db.game_titles.get(gameInstance.game_title_id) : undefined), [gameInstance]);
 
   useEffect(() => {
     listAllItemNames().then(setItemNames).catch(() => setItemNames([]));
+    getSpeciesIdIndex().then(setSpeciesIdIndex);
   }, []);
 
   useEffect(() => {
@@ -204,7 +208,19 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
     walk(from, []);
     return results;
   }
-  const reachableEvolutions = evolution ? downstreamEvolutions(evolution.edges, entry.species) : [];
+  // A species reachable "on paper" from PokeAPI's evolution chain isn't
+  // necessarily reachable in this specific game — Stantler only evolves
+  // into Wyrdeer starting with Legends: Arceus, so a Gold save (generation
+  // 2) shouldn't ever be able to reserve it. Filtered the same way the
+  // Variant Slide gates regional forms: by the target species' own
+  // introduction generation against this entry's game generation.
+  const generationCap = entryGameTitle && entryGameTitle.generation !== HOME_GENERATION ? entryGameTitle.generation : Infinity;
+  const allReachableEvolutions = evolution ? downstreamEvolutions(evolution.edges, entry.species) : [];
+  const reachableEvolutions = allReachableEvolutions.filter((r) => {
+    const id = lookupSpeciesId(speciesIdIndex, r.to);
+    return id === undefined || getGeneration(id) <= generationCap;
+  });
+  const evolutionsFilteredByGame = allReachableEvolutions.length > reachableEvolutions.length;
 
   return (
     <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/60 p-3 text-xs">
@@ -445,6 +461,12 @@ export function InfoPanel({ entry, nuzlocke, onClose }: InfoPanelProps) {
         <p className="mb-1 text-slate-500">Evolution — reserve any stage in the line, not just the next one</p>
         {evolution === null && <p className="text-slate-600">Loading…</p>}
         {evolution && evolution.species.length <= 1 && <p className="text-slate-600">Doesn't evolve.</p>}
+        {evolution && evolution.species.length > 1 && reachableEvolutions.length === 0 && (
+          <p className="text-slate-600">No evolutions available yet in this game's generation.</p>
+        )}
+        {evolution && evolutionsFilteredByGame && reachableEvolutions.length > 0 && (
+          <p className="mb-1 text-slate-600">Some evolutions aren't available in this game's generation and are hidden.</p>
+        )}
         {evolution && reachableEvolutions.length > 0 && (
           <ul className="flex flex-col gap-1.5">
             {reachableEvolutions.map((r) => {

@@ -14,6 +14,7 @@ import {
 import { getOriginBadgesForSpecies, type OriginBadge } from '../services/originBadges';
 import { bulkAddTag, bulkDelete, bulkToggleFainted, bulkToggleShiny } from '../services/bulkEdit';
 import { quickCatch } from '../services/quickCatch';
+import { recordSnapshot } from '../services/versionHistory';
 import { markAll, unmarkAll, revertToSelected, type MarkAllTarget } from '../services/massActions';
 import {
   deleteCustomBoxGroup,
@@ -433,6 +434,23 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genderExpandedTiles, isCustom, hideCaught, shinyOnly, flaggedOnly, anomalousOnly, ownedByPokemonId]);
 
+  // Completion bar denominator/numerator — tied to whatever set of tiles
+  // this view actually represents (view mode, Variant Slide, Gender View,
+  // type/rare/search filters), NOT the ownership-status toggles
+  // (hideCaught/shinyOnly/flaggedOnly/anomalousOnly), since those narrow
+  // which owned/unowned tiles are visible rather than changing what dex is
+  // being looked at — a bar that zeroed out under Hide Caught would be
+  // useless. This replaces the old bar, which was silently pinned to the
+  // full unfiltered national dex no matter what view was active.
+  const completionBasis = genderExpandedTiles;
+  const completionOwned = useMemo(
+    () => completionBasis.filter((t) => ownedForTile(t).length > 0).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [completionBasis, ownedByPokemonId],
+  );
+  const completionTotal = completionBasis.length;
+  const completionPct = completionTotal > 0 ? Math.round((completionOwned / completionTotal) * 100) : 0;
+
   /** Groups multiple owned duplicates as one bucket to slide open — scoped per form/gender slot, so sliding one variety's duplicates never affects a sibling form's. */
   function duplicateBucketKey(tile: Tile): string {
     return `${tile.pokemonId}-${tile.gender ?? 'x'}-${tile.variety?.name ?? 'd'}`;
@@ -723,6 +741,42 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
     } else {
       setConfirmingRelease({ uuid: entry.uuid, species: entry.species, reasons });
     }
+  }
+
+  // Quick per-card actions on the duplicate-management cards — shiny and
+  // gender are one-tap toggles since there's nothing to type; nickname and
+  // level go through an inline edit since they're free text/numbers.
+  async function toggleCardShiny(entry: VaultEntry) {
+    await recordSnapshot('shiny_toggle', `${entry.species} ${entry.shiny ? 'unmarked' : 'marked'} shiny`);
+    await db.vault.update(entry.uuid, { shiny: !entry.shiny });
+  }
+
+  async function cycleCardGender(entry: VaultEntry) {
+    const next = entry.gender === 'male' ? 'female' : 'male';
+    await recordSnapshot('gender_set', `${entry.species}'s gender set to ${next}`);
+    await db.vault.update(entry.uuid, { gender: next });
+  }
+
+  const [editingCardField, setEditingCardField] = useState<{ uuid: string; field: 'nickname' | 'level' } | null>(null);
+  const [cardFieldDraft, setCardFieldDraft] = useState('');
+
+  function startEditCardField(entry: VaultEntry, field: 'nickname' | 'level') {
+    setEditingCardField({ uuid: entry.uuid, field });
+    setCardFieldDraft(field === 'nickname' ? entry.nickname ?? '' : String(entry.level));
+  }
+
+  async function saveCardField(entry: VaultEntry) {
+    if (!editingCardField) return;
+    if (editingCardField.field === 'nickname') {
+      const value = cardFieldDraft.trim() || null;
+      await recordSnapshot('nickname_set', `${entry.species}'s nickname set to ${value ?? '(none)'}`);
+      await db.vault.update(entry.uuid, { nickname: value });
+    } else {
+      const level = Math.max(1, Math.min(100, Number(cardFieldDraft) || entry.level));
+      await recordSnapshot('level_set', `${entry.species}'s level set to ${level}`);
+      await db.vault.update(entry.uuid, { level });
+    }
+    setEditingCardField(null);
   }
 
   function closeDrawer() {
@@ -1171,8 +1225,14 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
             )}
           </div>
 
-          <span className="ml-auto text-slate-500">
-            {entries.length > 0 && `${new Set(entries.map((e) => e.pokemon_id)).size}/${baseTiles.length || '…'} caught`}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-slate-700 bg-slate-900">
+            <div className="h-full bg-cyan-400 transition-all" style={{ width: `${completionPct}%` }} />
+          </div>
+          <span className="shrink-0 text-slate-500">
+            {completionOwned}/{completionTotal} caught{completionTotal !== baseTiles.length ? ' (filtered)' : ''}
           </span>
         </div>
 
@@ -1420,35 +1480,116 @@ export function SpeciesGrid({ entries, gameInstanceId, gameTitle, nuzlocke, matc
                   + Add another duplicate
                 </button>
                 <ul className="grid grid-cols-4 gap-2">
-                  {expandedSpecies.map((e) => (
-                    <li key={e.uuid} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUuid(e.uuid)}
-                        className="flex w-full flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/50 p-2 hover:border-slate-500"
-                      >
-                        <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-16 w-16" style={{ imageRendering: 'pixelated' }} />
-                        <span className="text-[9px] leading-tight text-slate-300">{e.nickname ?? `Lv.${e.level}`}</span>
-                        <span className="text-[9px] text-slate-500">
-                          {e.shiny && <span className="text-amber-300">★ </span>}
-                          {e.is_sandbox_anomalous && <span className="text-red-400">⚠</span>}
-                          {!e.shiny && !e.is_sandbox_anomalous && `Lv.${e.level}`}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveDrawerSpecimen(e)}
-                        title="Remove this one"
-                        className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-red-700/60 bg-slate-950 text-[10px] text-red-300 hover:bg-red-900/60"
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
+                  {expandedSpecies.map((e) => {
+                    // Shown whenever the species itself can be male/female
+                    // (gender_rate 1-7) — including specimens still at the
+                    // quickCatch default of 'genderless', since that default
+                    // is a placeholder, not a real genderless species, and
+                    // this is exactly where a player would go set it.
+                    const genderCapable = (() => {
+                      const rate = genderRateByPokemonId.get(expandedPokemonId!);
+                      return rate !== undefined && rate >= 1 && rate <= 7;
+                    })();
+                    const editingNickname = editingCardField?.uuid === e.uuid && editingCardField.field === 'nickname';
+                    const editingLevel = editingCardField?.uuid === e.uuid && editingCardField.field === 'level';
+                    return (
+                      <li key={e.uuid} className="relative flex flex-col items-center gap-1 rounded-lg border border-slate-700 bg-slate-900/50 p-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedUuid(e.uuid)}
+                          title="Open full details"
+                          className="flex flex-col items-center hover:opacity-80"
+                        >
+                          <img src={getSpriteUrl(e.pokemon_id, e.shiny)} alt={e.species} className="h-16 w-16" style={{ imageRendering: 'pixelated' }} />
+                        </button>
+
+                        {editingNickname ? (
+                          <input
+                            autoFocus
+                            value={cardFieldDraft}
+                            onChange={(ev) => setCardFieldDraft(ev.target.value)}
+                            onKeyDown={(ev) => ev.key === 'Enter' && void saveCardField(e)}
+                            onBlur={() => void saveCardField(e)}
+                            placeholder="Nickname"
+                            className="w-full rounded border border-cyan-500/50 bg-slate-950 px-1 py-0.5 text-center text-[9px] text-slate-200 outline-none"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditCardField(e, 'nickname')}
+                            title="Click to rename"
+                            className="w-full truncate rounded px-0.5 text-[9px] leading-tight text-slate-300 hover:bg-slate-800/60"
+                          >
+                            {e.nickname ?? e.species}
+                          </button>
+                        )}
+
+                        {editingLevel ? (
+                          <input
+                            autoFocus
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={cardFieldDraft}
+                            onChange={(ev) => setCardFieldDraft(ev.target.value)}
+                            onKeyDown={(ev) => ev.key === 'Enter' && void saveCardField(e)}
+                            onBlur={() => void saveCardField(e)}
+                            className="w-full rounded border border-cyan-500/50 bg-slate-950 px-1 py-0.5 text-center text-[9px] text-slate-200 outline-none"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditCardField(e, 'level')}
+                            title="Click to set level"
+                            className="rounded px-1 text-[9px] text-slate-500 hover:bg-slate-800/60"
+                          >
+                            Lv.{e.level}
+                          </button>
+                        )}
+
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => void toggleCardShiny(e)}
+                            title={e.shiny ? 'Unmark shiny' : 'Mark shiny'}
+                            className={['rounded px-1 text-[11px]', e.shiny ? 'text-amber-300' : 'text-slate-600 hover:text-slate-400'].join(' ')}
+                          >
+                            ★
+                          </button>
+                          {genderCapable && (
+                            <button
+                              type="button"
+                              onClick={() => void cycleCardGender(e)}
+                              title={e.gender === 'genderless' ? 'Set gender' : 'Toggle gender'}
+                              className={[
+                                'rounded px-1 text-[11px]',
+                                e.gender === 'male' ? 'text-sky-300' : e.gender === 'female' ? 'text-pink-300' : 'text-slate-600 hover:text-slate-400',
+                              ].join(' ')}
+                            >
+                              {e.gender === 'male' ? '♂' : e.gender === 'female' ? '♀' : '⚥'}
+                            </button>
+                          )}
+                          {e.is_sandbox_anomalous && <span className="text-[10px] text-red-400">⚠</span>}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveDrawerSpecimen(e)}
+                          title="Remove this one"
+                          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-red-700/60 bg-slate-950 text-[10px] text-red-300 hover:bg-red-900/60"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : (
-              <SpeciesReference species={titleCase(expandedName)} />
+              <SpeciesReference
+                species={titleCase(expandedName)}
+                generationCap={gameTitle && gameTitle.generation !== HOME_GENERATION ? gameTitle.generation : undefined}
+              />
             )}
           </div>
         </div>

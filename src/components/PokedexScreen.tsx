@@ -57,9 +57,14 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
         ? allSpecies.filter((s) => getGeneration(s.pokemonId) <= gameTitle.generation)
         : allSpecies;
 
-  const visible = species
-    .filter((s) => !hideCaught || !caughtPokemonIds.has(s.pokemonId))
-    .filter((s) => !query.trim() || s.name.includes(query.trim().toLowerCase()));
+  // Completion is tied to the search query (which dex entries are even in
+  // view) but not Hide Caught, since that toggle exists to hide caught
+  // entries from the grid — tying the bar to it too would always read 0%
+  // whenever it's on.
+  const searchFiltered = species.filter((s) => !query.trim() || s.name.includes(query.trim().toLowerCase()));
+  const visible = searchFiltered.filter((s) => !hideCaught || !caughtPokemonIds.has(s.pokemonId));
+  const caughtInView = searchFiltered.filter((s) => caughtPokemonIds.has(s.pokemonId)).length;
+  const completionPct = searchFiltered.length > 0 ? Math.round((caughtInView / searchFiltered.length) * 100) : 0;
 
   return (
     <div className="flex h-full flex-col gap-2 text-xs">
@@ -82,10 +87,14 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
         </button>
       </div>
 
-      <p className="text-slate-500">
-        {[...caughtPokemonIds].filter((id) => species.some((s) => s.pokemonId === id)).length}/{species.length || '…'}{' '}
-        caught
-      </p>
+      <div className="flex items-center gap-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-slate-700 bg-slate-900">
+          <div className="h-full bg-cyan-400 transition-all" style={{ width: `${completionPct}%` }} />
+        </div>
+        <span className="shrink-0 text-slate-500">
+          {caughtInView}/{searchFiltered.length || '…'} caught
+        </span>
+      </div>
 
       <div className="grid flex-1 auto-rows-min grid-cols-6 gap-1 overflow-y-auto rounded-lg border border-slate-700 bg-slate-800/40 p-1.5">
         {visible.map((s) => {
@@ -125,7 +134,10 @@ export function PokedexScreen({ caughtPokemonIds }: PokedexScreenProps) {
               close
             </button>
           </div>
-          <SpeciesReference species={selected.name} />
+          <SpeciesReference
+            species={selected.name}
+            generationCap={gameTitle && gameTitle.generation !== HOME_GENERATION ? gameTitle.generation : undefined}
+          />
         </div>
       )}
     </div>
